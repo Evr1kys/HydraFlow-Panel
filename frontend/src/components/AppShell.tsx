@@ -21,6 +21,8 @@ import {
   IconReceipt,
   IconPuzzle,
   IconPlugConnected,
+  IconCode,
+  IconDatabaseImport,
 } from '@tabler/icons-react';
 import { useAuth } from './AuthProvider';
 
@@ -72,6 +74,8 @@ const navSections: NavSection[] = [
     color: '#FCC419',
     items: [
       { label: 'Configuration', icon: IconSettings, path: '/settings' },
+      { label: 'Config Editor', icon: IconCode, path: '/config-editor' },
+      { label: 'Migration', icon: IconDatabaseImport, path: '/migration' },
     ],
   },
 ];

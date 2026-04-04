@@ -19,6 +19,7 @@ import { TrafficModule } from './traffic/traffic.module';
 import { HwidModule } from './hwid/hwid.module';
 import { ConfigProfilesModule } from './config-profiles/config-profiles.module';
 import { MetricsModule } from './metrics/metrics.module';
+import { MigrationModule } from './migration/migration.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { MetricsModule } from './metrics/metrics.module';
     HwidModule,
     ConfigProfilesModule,
     MetricsModule,
+    MigrationModule,
   ],
 })
 export class AppModule {}

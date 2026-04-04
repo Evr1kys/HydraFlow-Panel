@@ -1,9 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { readFile } from 'fs/promises';
 import { PrismaService } from '../prisma/prisma.service';
 
 const execAsync = promisify(exec);
+
+const XRAY_CONFIG_PATH = '/etc/xray/config.json';
 
 export interface XrayStatus {
   running: boolean;
@@ -24,6 +27,19 @@ export interface XrayConfig {
   log: { loglevel: string };
   inbounds: XrayInbound[];
   outbounds: Array<{ protocol: string; tag: string }>;
+}
+
+export interface ConfigValidationError {
+  line: number;
+  column: number;
+  message: string;
+  severity: 'error' | 'warning';
+}
+
+export interface ConfigValidationResult {
+  valid: boolean;
+  errors: ConfigValidationError[];
+  warnings: ConfigValidationError[];
 }
 
 @Injectable()
@@ -171,5 +187,171 @@ export class XrayService {
     }
 
     return config;
+  }
+
+  async getConfig(): Promise<{ config: string }> {
+    try {
+      const content = await readFile(XRAY_CONFIG_PATH, 'utf-8');
+      return { config: content };
+    } catch {
+      // If file doesn't exist, generate default and return it
+      const config = await this.generateConfig();
+      return { config: JSON.stringify(config, null, 2) };
+    }
+  }
+
+  async saveConfig(configJson: string): Promise<{ message: string }> {
+    const validation = this.validateConfig(configJson);
+    if (!validation.valid) {
+      return { message: `Config has errors: ${validation.errors.map((e) => e.message).join('; ')}` };
+    }
+
+    try {
+      const { writeFile } = await import('fs/promises');
+      await writeFile(XRAY_CONFIG_PATH, configJson);
+    } catch {
+      this.logger.warn('Could not write xray config');
+      return { message: 'Failed to write config file' };
+    }
+
+    return this.restart();
+  }
+
+  async getDefaultConfig(): Promise<{ config: string }> {
+    const config = await this.generateConfig();
+    return { config: JSON.stringify(config, null, 2) };
+  }
+
+  validateConfig(configJson: string): ConfigValidationResult {
+    const errors: ConfigValidationError[] = [];
+    const warnings: ConfigValidationError[] = [];
+
+    // Step 1: Check JSON syntax
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(configJson) as Record<string, unknown>;
+    } catch (err) {
+      const message = err instanceof SyntaxError ? err.message : 'Invalid JSON';
+      // Try to extract position from error message
+      const posMatch = message.match(/position\s+(\d+)/i);
+      let line = 1;
+      let column = 1;
+      if (posMatch) {
+        const pos = parseInt(posMatch[1], 10);
+        const upToPos = configJson.substring(0, pos);
+        line = (upToPos.match(/\n/g) || []).length + 1;
+        const lastNewline = upToPos.lastIndexOf('\n');
+        column = pos - lastNewline;
+      }
+      errors.push({ line, column, message, severity: 'error' });
+      return { valid: false, errors, warnings };
+    }
+
+    // Step 2: Structural validation
+    if (!parsed['log'] && !parsed['inbounds'] && !parsed['outbounds']) {
+      warnings.push({
+        line: 1,
+        column: 1,
+        message: 'Config appears empty - no log, inbounds, or outbounds found',
+        severity: 'warning',
+      });
+    }
+
+    if (parsed['inbounds'] && !Array.isArray(parsed['inbounds'])) {
+      errors.push({
+        line: 1,
+        column: 1,
+        message: '"inbounds" must be an array',
+        severity: 'error',
+      });
+    }
+
+    if (parsed['outbounds'] && !Array.isArray(parsed['outbounds'])) {
+      errors.push({
+        line: 1,
+        column: 1,
+        message: '"outbounds" must be an array',
+        severity: 'error',
+      });
+    }
+
+    // Step 3: Validate inbounds
+    if (Array.isArray(parsed['inbounds'])) {
+      const inbounds = parsed['inbounds'] as Array<Record<string, unknown>>;
+      const ports = new Set<number>();
+      const tags = new Set<string>();
+
+      for (let i = 0; i < inbounds.length; i++) {
+        const inbound = inbounds[i];
+        if (!inbound['protocol']) {
+          errors.push({
+            line: 1,
+            column: 1,
+            message: `inbounds[${i}]: missing "protocol" field`,
+            severity: 'error',
+          });
+        }
+        if (!inbound['port']) {
+          errors.push({
+            line: 1,
+            column: 1,
+            message: `inbounds[${i}]: missing "port" field`,
+            severity: 'error',
+          });
+        }
+        if (typeof inbound['port'] === 'number') {
+          if (ports.has(inbound['port'] as number)) {
+            warnings.push({
+              line: 1,
+              column: 1,
+              message: `inbounds[${i}]: duplicate port ${inbound['port']}`,
+              severity: 'warning',
+            });
+          }
+          ports.add(inbound['port'] as number);
+        }
+        if (typeof inbound['tag'] === 'string') {
+          if (tags.has(inbound['tag'] as string)) {
+            errors.push({
+              line: 1,
+              column: 1,
+              message: `inbounds[${i}]: duplicate tag "${inbound['tag']}"`,
+              severity: 'error',
+            });
+          }
+          tags.add(inbound['tag'] as string);
+        }
+      }
+    }
+
+    // Step 4: Validate outbounds
+    if (Array.isArray(parsed['outbounds'])) {
+      const outbounds = parsed['outbounds'] as Array<Record<string, unknown>>;
+      for (let i = 0; i < outbounds.length; i++) {
+        if (!outbounds[i]['protocol']) {
+          errors.push({
+            line: 1,
+            column: 1,
+            message: `outbounds[${i}]: missing "protocol" field`,
+            severity: 'error',
+          });
+        }
+      }
+      const hasDirect = outbounds.some((o) => o['protocol'] === 'freedom');
+      if (!hasDirect) {
+        warnings.push({
+          line: 1,
+          column: 1,
+          message: 'No "freedom" outbound found - traffic may not route correctly',
+          severity: 'warning',
+        });
+      }
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings,
+    };
   }
 }

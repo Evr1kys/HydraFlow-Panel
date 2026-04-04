@@ -1,12 +1,19 @@
 import { Controller, Get, Param, Res, Headers, Query } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { Response } from 'express';
 import { SubscriptionService } from './subscription.service';
 
+@ApiTags('Subscription')
 @Controller()
 export class SubscriptionController {
   constructor(private readonly subscriptionService: SubscriptionService) {}
 
   @Get('sub/:token')
+  @ApiOperation({ summary: 'Get subscription links (base64)' })
+  @ApiParam({ name: 'token', description: 'User subscription token' })
+  @ApiQuery({ name: 'hwid', required: false, description: 'Hardware ID for device binding' })
+  @ApiQuery({ name: 'platform', required: false, description: 'Client platform' })
+  @ApiResponse({ status: 200, description: 'Base64-encoded subscription links' })
   async getSubscription(
     @Param('token') token: string,
     @Res() res: Response,
@@ -36,6 +43,9 @@ export class SubscriptionController {
   }
 
   @Get('p/:token')
+  @ApiOperation({ summary: 'Get subscription page (HTML)' })
+  @ApiParam({ name: 'token', description: 'User subscription token' })
+  @ApiResponse({ status: 200, description: 'HTML subscription page' })
   async getSubscriptionPage(
     @Param('token') token: string,
     @Res() res: Response,

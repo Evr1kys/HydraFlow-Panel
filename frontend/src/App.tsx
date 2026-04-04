@@ -10,6 +10,8 @@ import { IntelligencePage } from './pages/Intelligence';
 import { BillingPage } from './pages/Billing';
 import { PluginsPage } from './pages/Plugins';
 import { SessionsPage } from './pages/Sessions';
+import { ConfigEditorPage } from './pages/ConfigEditor';
+import { MigrationPage } from './pages/Migration';
 
 export function App() {
   return (
@@ -31,6 +33,8 @@ export function App() {
           <Route path="/billing" element={<BillingPage />} />
           <Route path="/plugins" element={<PluginsPage />} />
           <Route path="/sessions" element={<SessionsPage />} />
+          <Route path="/config-editor" element={<ConfigEditorPage />} />
+          <Route path="/migration" element={<MigrationPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
