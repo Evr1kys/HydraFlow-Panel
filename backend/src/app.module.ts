@@ -20,6 +20,7 @@ import { HwidModule } from './hwid/hwid.module';
 import { ConfigProfilesModule } from './config-profiles/config-profiles.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { MigrationModule } from './migration/migration.module';
+import { SquadsModule } from './squads/squads.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { MigrationModule } from './migration/migration.module';
     ConfigProfilesModule,
     MetricsModule,
     MigrationModule,
+    SquadsModule,
   ],
 })
 export class AppModule {}

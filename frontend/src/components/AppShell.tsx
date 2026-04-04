@@ -12,6 +12,7 @@ import {
   IconLayoutDashboard,
   IconUsers,
   IconServer,
+  IconUsersGroup,
   IconRadar,
   IconActivity,
   IconSettings,
@@ -50,6 +51,7 @@ const navSections: NavSection[] = [
     items: [
       { label: 'Users', icon: IconUsers, path: '/users' },
       { label: 'Nodes', icon: IconServer, path: '/nodes' },
+      { label: 'Squads', icon: IconUsersGroup, path: '/squads' },
     ],
   },
   {

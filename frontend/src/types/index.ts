@@ -199,3 +199,33 @@ export interface ActiveSessionCount {
   total: number;
   byProtocol: { protocol: string; count: number }[];
 }
+
+// Squad types
+export interface SquadUser {
+  id: string;
+  email: string;
+  remark: string | null;
+  enabled?: boolean;
+}
+
+export interface InternalSquad {
+  id: string;
+  name: string;
+  description: string | null;
+  nodeIds: string[];
+  createdAt: string;
+  users: SquadUser[];
+}
+
+export interface ExternalSquad {
+  id: string;
+  name: string;
+  apiKey: string;
+  maxUsers: number;
+  hostOverrides: Record<string, string> | null;
+  enabled: boolean;
+  subPageTitle: string | null;
+  subPageBrand: string | null;
+  createdAt: string;
+  users: SquadUser[];
+}

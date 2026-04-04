@@ -12,6 +12,7 @@ import { PluginsPage } from './pages/Plugins';
 import { SessionsPage } from './pages/Sessions';
 import { ConfigEditorPage } from './pages/ConfigEditor';
 import { MigrationPage } from './pages/Migration';
+import { SquadsPage } from './pages/Squads';
 
 export function App() {
   return (
@@ -28,6 +29,7 @@ export function App() {
           <Route path="/" element={<DashboardPage />} />
           <Route path="/users" element={<UsersPage />} />
           <Route path="/nodes" element={<NodesPage />} />
+          <Route path="/squads" element={<SquadsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/intelligence" element={<IntelligencePage />} />
           <Route path="/billing" element={<BillingPage />} />

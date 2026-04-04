@@ -43,22 +43,26 @@ model OAuthAccount {
 }
 
 model User {
-  id             String          @id @default(uuid())
-  email          String          @unique
-  uuid           String          @unique @default(uuid())
-  subToken       String          @unique @default(uuid())
-  enabled        Boolean         @default(true)
-  trafficUp      BigInt          @default(0)
-  trafficDown    BigInt          @default(0)
-  trafficLimit   BigInt?
-  expiryDate     DateTime?
-  maxDevices     Int             @default(3)
-  remark         String?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  activeSessions ActiveSession[]
-  trafficHistory UserTraffic[]
-  devices        HwidDevice[]
+  id              String          @id @default(uuid())
+  email           String          @unique
+  uuid            String          @unique @default(uuid())
+  subToken        String          @unique @default(uuid())
+  enabled         Boolean         @default(true)
+  trafficUp       BigInt          @default(0)
+  trafficDown     BigInt          @default(0)
+  trafficLimit    BigInt?
+  expiryDate      DateTime?
+  maxDevices      Int             @default(3)
+  remark          String?
+  internalSquadId String?
+  internalSquad   InternalSquad?  @relation(fields: [internalSquadId], references: [id], onDelete: SetNull)
+  externalSquadId String?
+  externalSquad   ExternalSquad?  @relation(fields: [externalSquadId], references: [id], onDelete: SetNull)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  activeSessions  ActiveSession[]
+  trafficHistory  UserTraffic[]
+  devices         HwidDevice[]
 }
 
 model Settings {
@@ -227,4 +231,26 @@ model HwidDevice {
   createdAt DateTime @default(now())
   @@unique([userId, hwid])
   @@index([userId])
+}
+
+model InternalSquad {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  nodeIds     String[]
+  createdAt   DateTime @default(now())
+  users       User[]
+}
+
+model ExternalSquad {
+  id            String   @id @default(uuid())
+  name          String   @unique
+  apiKey        String   @unique @default(uuid())
+  maxUsers      Int      @default(100)
+  hostOverrides Json?
+  enabled       Boolean  @default(true)
+  subPageTitle  String?
+  subPageBrand  String?
+  createdAt     DateTime @default(now())
+  users         User[]
 }

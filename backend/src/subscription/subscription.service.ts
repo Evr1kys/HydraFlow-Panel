@@ -65,6 +65,37 @@ export class SubscriptionService {
     private readonly hwidService: HwidService,
   ) {}
 
+  private async getHostOverrides(
+    user: { externalSquadId: string | null; internalSquadId: string | null },
+  ): Promise<Record<string, string>> {
+    if (user.externalSquadId) {
+      const squad = await this.prisma.externalSquad.findUnique({
+        where: { id: user.externalSquadId },
+      });
+      if (squad?.hostOverrides && typeof squad.hostOverrides === 'object') {
+        return squad.hostOverrides as Record<string, string>;
+      }
+    }
+    return {};
+  }
+
+  private async getSquadBranding(
+    user: { externalSquadId: string | null },
+  ): Promise<{ title: string; brand: string }> {
+    if (user.externalSquadId) {
+      const squad = await this.prisma.externalSquad.findUnique({
+        where: { id: user.externalSquadId },
+      });
+      if (squad) {
+        return {
+          title: squad.subPageTitle ?? 'HydraFlow',
+          brand: squad.subPageBrand ?? 'HydraFlow',
+        };
+      }
+    }
+    return { title: 'HydraFlow', brand: 'HydraFlow' };
+  }
+
   async generateLinks(
     token: string,
     userAgent: string = '',
@@ -108,20 +139,21 @@ export class SubscriptionService {
       expire: user.expiryDate,
     };
 
+    const hostOverrides = await this.getHostOverrides(user);
     const clientFormat = detectClientFormat(userAgent);
 
     if (clientFormat === 'clash') {
-      const clashConfig = this.generateClashConfig(user, settings);
+      const clashConfig = this.generateClashConfig(user, settings, hostOverrides);
       return { content: clashConfig, contentType: 'text/yaml; charset=utf-8', userInfo };
     }
 
     if (clientFormat === 'singbox') {
-      const singboxConfig = this.generateSingboxConfig(user, settings);
+      const singboxConfig = this.generateSingboxConfig(user, settings, hostOverrides);
       return { content: singboxConfig, contentType: 'application/json; charset=utf-8', userInfo };
     }
 
     // Default: base64 links
-    const links = this.generateBase64Links(user, settings);
+    const links = this.generateBase64Links(user, settings, hostOverrides);
     return { content: links, contentType: 'text/plain; charset=utf-8', userInfo };
   }
 
@@ -144,12 +176,14 @@ export class SubscriptionService {
       ssMethod: string;
       ssPassword: string | null;
     },
+    hostOverrides: Record<string, string> = {},
   ): string {
     const links: string[] = [];
-    const serverIp = settings.serverIp ?? '127.0.0.1';
+    const serverIp = hostOverrides['serverIp'] ?? settings.serverIp ?? '127.0.0.1';
     const remark = user.remark ?? user.email;
 
     if (settings.realityEnabled) {
+      const realityHost = hostOverrides['reality'] ?? serverIp;
       const params = new URLSearchParams({
         type: 'tcp',
         security: 'reality',
@@ -160,12 +194,13 @@ export class SubscriptionService {
         flow: 'xtls-rprx-vision',
       });
       links.push(
-        `vless://${user.uuid}@${serverIp}:${settings.realityPort}?${params.toString()}#${encodeURIComponent(`${remark}-reality`)}`,
+        `vless://${user.uuid}@${realityHost}:${settings.realityPort}?${params.toString()}#${encodeURIComponent(`${remark}-reality`)}`,
       );
     }
 
     if (settings.wsEnabled) {
-      const host = settings.cdnDomain ?? settings.wsHost ?? serverIp;
+      const wsOverride = hostOverrides['ws'];
+      const host = wsOverride ?? settings.cdnDomain ?? settings.wsHost ?? serverIp;
       const params = new URLSearchParams({
         type: 'ws',
         security: 'none',
@@ -178,11 +213,12 @@ export class SubscriptionService {
     }
 
     if (settings.ssEnabled && settings.ssPassword) {
+      const ssHost = hostOverrides['ss'] ?? serverIp;
       const userInfo = Buffer.from(
         `${settings.ssMethod}:${settings.ssPassword}`,
       ).toString('base64');
       links.push(
-        `ss://${userInfo}@${serverIp}:${settings.ssPort}#${encodeURIComponent(`${remark}-ss`)}`,
+        `ss://${userInfo}@${ssHost}:${settings.ssPort}#${encodeURIComponent(`${remark}-ss`)}`,
       );
     }
 
@@ -209,19 +245,21 @@ export class SubscriptionService {
       ssPassword: string | null;
       splitTunneling: boolean;
     },
+    hostOverrides: Record<string, string> = {},
   ): string {
-    const serverIp = settings.serverIp ?? '127.0.0.1';
+    const serverIp = hostOverrides['serverIp'] ?? settings.serverIp ?? '127.0.0.1';
     const remark = user.remark ?? user.email;
     const proxies: string[] = [];
     const proxyNames: string[] = [];
 
     if (settings.realityEnabled) {
+      const realityHost = hostOverrides['reality'] ?? serverIp;
       const name = `${remark}-reality`;
       proxyNames.push(name);
       proxies.push(
         `  - name: "${name}"\n` +
         `    type: vless\n` +
-        `    server: ${serverIp}\n` +
+        `    server: ${realityHost}\n` +
         `    port: ${settings.realityPort}\n` +
         `    uuid: ${user.uuid}\n` +
         `    network: tcp\n` +
@@ -237,7 +275,8 @@ export class SubscriptionService {
     }
 
     if (settings.wsEnabled) {
-      const host = settings.cdnDomain ?? settings.wsHost ?? serverIp;
+      const wsOverride = hostOverrides['ws'];
+      const host = wsOverride ?? settings.cdnDomain ?? settings.wsHost ?? serverIp;
       const name = `${remark}-ws`;
       proxyNames.push(name);
       proxies.push(
@@ -257,12 +296,13 @@ export class SubscriptionService {
     }
 
     if (settings.ssEnabled && settings.ssPassword) {
+      const ssHost = hostOverrides['ss'] ?? serverIp;
       const name = `${remark}-ss`;
       proxyNames.push(name);
       proxies.push(
         `  - name: "${name}"\n` +
         `    type: ss\n` +
-        `    server: ${serverIp}\n` +
+        `    server: ${ssHost}\n` +
         `    port: ${settings.ssPort}\n` +
         `    cipher: ${settings.ssMethod}\n` +
         `    password: "${settings.ssPassword}"`,
@@ -323,19 +363,21 @@ export class SubscriptionService {
       ssPassword: string | null;
       splitTunneling: boolean;
     },
+    hostOverrides: Record<string, string> = {},
   ): string {
-    const serverIp = settings.serverIp ?? '127.0.0.1';
+    const serverIp = hostOverrides['serverIp'] ?? settings.serverIp ?? '127.0.0.1';
     const remark = user.remark ?? user.email;
     const outbounds: Record<string, unknown>[] = [];
     const tags: string[] = [];
 
     if (settings.realityEnabled) {
+      const realityHost = hostOverrides['reality'] ?? serverIp;
       const tag = `${remark}-reality`;
       tags.push(tag);
       outbounds.push({
         type: 'vless',
         tag,
-        server: serverIp,
+        server: realityHost,
         server_port: settings.realityPort,
         uuid: user.uuid,
         flow: 'xtls-rprx-vision',
@@ -353,7 +395,8 @@ export class SubscriptionService {
     }
 
     if (settings.wsEnabled) {
-      const host = settings.cdnDomain ?? settings.wsHost ?? serverIp;
+      const wsOverride = hostOverrides['ws'];
+      const host = wsOverride ?? settings.cdnDomain ?? settings.wsHost ?? serverIp;
       const tag = `${remark}-ws`;
       tags.push(tag);
       outbounds.push({
@@ -371,12 +414,13 @@ export class SubscriptionService {
     }
 
     if (settings.ssEnabled && settings.ssPassword) {
+      const ssHost = hostOverrides['ss'] ?? serverIp;
       const tag = `${remark}-ss`;
       tags.push(tag);
       outbounds.push({
         type: 'shadowsocks',
         tag,
-        server: serverIp,
+        server: ssHost,
         server_port: settings.ssPort,
         method: settings.ssMethod,
         password: settings.ssPassword,
@@ -453,6 +497,7 @@ export class SubscriptionService {
       where: { id: 'main' },
     });
 
+    const branding = await this.getSquadBranding(user);
     const remark = escapeHtml(user.remark ?? user.email);
     const email = escapeHtml(user.email);
     const status = !user.enabled
@@ -475,7 +520,9 @@ export class SubscriptionService {
       ? user.expiryDate.toISOString().split('T')[0]
       : 'Never';
 
-    const subUrl = `${settings?.serverIp ? `http://${settings.serverIp}:3000` : ''}/sub/${token}`;
+    const hostOverrides = await this.getHostOverrides(user);
+    const subHost = hostOverrides['serverIp'] ?? settings?.serverIp;
+    const subUrl = `${subHost ? `http://${subHost}:3000` : ''}/sub/${token}`;
     const safeSubUrl = escapeHtml(subUrl);
 
     const protocols: string[] = [];
@@ -492,7 +539,7 @@ export class SubscriptionService {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>HydraFlow - ${remark}</title>
+  <title>${escapeHtml(branding.title)} - ${remark}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -607,7 +654,7 @@ export class SubscriptionService {
 <body>
   <div class="container">
     <div class="header">
-      <h1>HydraFlow</h1>
+      <h1>${escapeHtml(branding.brand)}</h1>
       <p>Subscription for ${remark}</p>
     </div>
 
