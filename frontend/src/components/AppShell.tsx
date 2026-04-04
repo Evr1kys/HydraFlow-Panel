@@ -18,6 +18,9 @@ import {
   IconLogout,
   IconBrandGithub,
   IconBrandTelegram,
+  IconReceipt,
+  IconPuzzle,
+  IconPlugConnected,
 } from '@tabler/icons-react';
 import { useAuth } from './AuthProvider';
 
@@ -53,6 +56,15 @@ const navSections: NavSection[] = [
     items: [
       { label: 'ISP Map', icon: IconRadar, path: '/intelligence' },
       { label: 'Protocol Health', icon: IconActivity, path: '/?section=health' },
+    ],
+  },
+  {
+    label: 'TOOLS',
+    color: '#FF922B',
+    items: [
+      { label: 'Billing', icon: IconReceipt, path: '/billing' },
+      { label: 'Plugins', icon: IconPuzzle, path: '/plugins' },
+      { label: 'Sessions', icon: IconPlugConnected, path: '/sessions' },
     ],
   },
   {

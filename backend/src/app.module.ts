@@ -11,6 +11,9 @@ import { SubscriptionModule } from './subscription/subscription.module';
 import { HealthModule } from './health/health.module';
 import { NodesModule } from './nodes/nodes.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
+import { BillingModule } from './billing/billing.module';
+import { PluginsModule } from './plugins/plugins.module';
+import { SessionsExplorerModule } from './sessions-explorer/sessions-explorer.module';
 
 @Module({
   imports: [
@@ -26,6 +29,9 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     HealthModule,
     NodesModule,
     WebhooksModule,
+    BillingModule,
+    PluginsModule,
+    SessionsExplorerModule,
   ],
 })
 export class AppModule {}

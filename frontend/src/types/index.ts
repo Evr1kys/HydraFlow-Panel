@@ -114,3 +114,88 @@ export interface Session {
   userAgent: string;
   ip: string;
 }
+
+// Billing types
+export interface BillingProvider {
+  id: string;
+  name: string;
+  apiUrl: string;
+  credentials: string;
+  createdAt: string;
+}
+
+export interface BillingNode {
+  id: string;
+  nodeId: string;
+  providerId: string;
+  monthlyRate: number;
+  currency: string;
+  renewalDate: string | null;
+  createdAt: string;
+  node: Node;
+  provider: BillingProvider;
+  history: BillingHistoryEntry[];
+}
+
+export interface BillingHistoryEntry {
+  id: string;
+  billingNodeId: string;
+  amount: number;
+  currency: string;
+  date: string;
+  paid: boolean;
+}
+
+export interface BillingSummary {
+  totalMonthly: number;
+  totalUnpaid: number;
+  nodeCount: number;
+  currency: string;
+  upcomingRenewals: {
+    id: string;
+    nodeName: string;
+    providerName: string;
+    monthlyRate: number;
+    currency: string;
+    renewalDate: string;
+  }[];
+}
+
+// Plugin types
+export interface NodePlugin {
+  id: string;
+  nodeId: string;
+  type: string;
+  config: string;
+  enabled: boolean;
+  node?: Node;
+}
+
+// Active session types (user connections)
+export interface ActiveSession {
+  id: string;
+  userId: string;
+  nodeId: string | null;
+  protocol: string;
+  clientIp: string;
+  startedAt: string;
+  bytesUp: string;
+  bytesDown: string;
+  user: {
+    id: string;
+    email: string;
+    uuid: string;
+    enabled: boolean;
+    remark: string | null;
+  };
+  node: {
+    id: string;
+    name: string;
+    address: string;
+  } | null;
+}
+
+export interface ActiveSessionCount {
+  total: number;
+  byProtocol: { protocol: string; count: number }[];
+}

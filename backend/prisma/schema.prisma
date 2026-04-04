@@ -15,18 +15,19 @@ model Admin {
 }
 
 model User {
-  id           String    @id @default(uuid())
-  email        String    @unique
-  uuid         String    @unique @default(uuid())
-  subToken     String    @unique @default(uuid())
-  enabled      Boolean   @default(true)
-  trafficUp    BigInt    @default(0)
-  trafficDown  BigInt    @default(0)
-  trafficLimit BigInt?
-  expiryDate   DateTime?
-  remark       String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id             String          @id @default(uuid())
+  email          String          @unique
+  uuid           String          @unique @default(uuid())
+  subToken       String          @unique @default(uuid())
+  enabled        Boolean         @default(true)
+  trafficUp      BigInt          @default(0)
+  trafficDown    BigInt          @default(0)
+  trafficLimit   BigInt?
+  expiryDate     DateTime?
+  remark         String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  activeSessions ActiveSession[]
 }
 
 model Settings {
@@ -76,15 +77,18 @@ model Alert {
 }
 
 model Node {
-  id        String   @id @default(uuid())
-  name      String
-  address   String
-  port      Int
-  apiKey    String   @default("")
-  enabled   Boolean  @default(true)
-  status    String   @default("unknown")
-  lastCheck DateTime?
-  createdAt DateTime @default(now())
+  id             String          @id @default(uuid())
+  name           String
+  address        String
+  port           Int
+  apiKey         String          @default("")
+  enabled        Boolean         @default(true)
+  status         String          @default("unknown")
+  lastCheck      DateTime?
+  createdAt      DateTime        @default(now())
+  billingNodes   BillingNode[]
+  plugins        NodePlugin[]
+  activeSessions ActiveSession[]
 }
 
 model Webhook {
@@ -94,4 +98,58 @@ model Webhook {
   secret    String
   enabled   Boolean  @default(true)
   createdAt DateTime @default(now())
+}
+
+model BillingProvider {
+  id          String        @id @default(uuid())
+  name        String
+  apiUrl      String        @default("")
+  credentials String        @default("")
+  createdAt   DateTime      @default(now())
+  nodes       BillingNode[]
+}
+
+model BillingNode {
+  id          String          @id @default(uuid())
+  nodeId      String
+  providerId  String
+  monthlyRate Float           @default(0)
+  currency    String          @default("USD")
+  renewalDate DateTime?
+  node        Node            @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  provider    BillingProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  history     BillingHistory[]
+  createdAt   DateTime        @default(now())
+}
+
+model BillingHistory {
+  id            String      @id @default(uuid())
+  billingNodeId String
+  amount        Float
+  currency      String      @default("USD")
+  date          DateTime    @default(now())
+  paid          Boolean     @default(false)
+  billingNode   BillingNode @relation(fields: [billingNodeId], references: [id], onDelete: Cascade)
+}
+
+model NodePlugin {
+  id      String  @id @default(uuid())
+  nodeId  String
+  type    String
+  config  String  @default("{}")
+  enabled Boolean @default(true)
+  node    Node    @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+}
+
+model ActiveSession {
+  id         String   @id @default(uuid())
+  userId     String
+  nodeId     String?
+  protocol   String
+  clientIp   String
+  startedAt  DateTime @default(now())
+  bytesUp    BigInt   @default(0)
+  bytesDown  BigInt   @default(0)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  node       Node?    @relation(fields: [nodeId], references: [id], onDelete: SetNull)
 }
