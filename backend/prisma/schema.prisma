@@ -1,0 +1,76 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Admin {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now())
+}
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  uuid         String    @unique @default(uuid())
+  subToken     String    @unique @default(uuid())
+  enabled      Boolean   @default(true)
+  trafficUp    BigInt    @default(0)
+  trafficDown  BigInt    @default(0)
+  trafficLimit BigInt?
+  expiryDate   DateTime?
+  remark       String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model Settings {
+  id              String  @id @default("main")
+  serverIp        String?
+
+  realityEnabled  Boolean @default(true)
+  realityPort     Int     @default(443)
+  realitySni      String  @default("www.apple.com")
+  realityPbk      String?
+  realityPvk      String?
+  realitySid      String?
+
+  wsEnabled       Boolean @default(true)
+  wsPort          Int     @default(2053)
+  wsPath          String?
+  wsHost          String?
+
+  ssEnabled       Boolean @default(false)
+  ssPort          Int     @default(8388)
+  ssMethod        String  @default("2022-blake3-aes-256-gcm")
+  ssPassword      String?
+
+  cdnDomain       String?
+  splitTunneling  Boolean @default(true)
+  adBlocking      Boolean @default(true)
+}
+
+model ISPReport {
+  id        String   @id @default(uuid())
+  country   String
+  isp       String
+  asn       Int?
+  protocol  String
+  status    String
+  createdAt DateTime @default(now())
+}
+
+model Alert {
+  id        String   @id @default(uuid())
+  isp       String
+  protocol  String
+  oldStatus String
+  newStatus String
+  country   String
+  createdAt DateTime @default(now())
+}

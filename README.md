@@ -1,203 +1,120 @@
-<p align="center">
-  <img src="https://raw.githubusercontent.com/Evr1kys/HydraFlow/main/assets/logo.svg" width="80" alt="HydraFlow Logo">
-</p>
+# HydraFlow Panel
 
-<h1 align="center">HydraFlow Panel</h1>
+Admin panel for HydraFlow proxy servers. Built with NestJS, React, Mantine v7, Prisma, and PostgreSQL.
 
-<p align="center">
-  Production-grade administration panel for the <a href="https://github.com/Evr1kys/HydraFlow">HydraFlow</a> anti-censorship proxy server.<br>
-  Single binary. No dependencies. No Node.js. No Docker required.
-</p>
-
-<p align="center">
-  <a href="#features">Features</a> |
-  <a href="#quick-start">Quick Start</a> |
-  <a href="#comparison-with-remnawave">Comparison</a> |
-  <a href="#architecture">Architecture</a> |
-  <a href="#api-reference">API</a>
-</p>
-
----
+![Version](https://img.shields.io/badge/version-2.0.0-teal)
+![License](https://img.shields.io/badge/license-MIT-blue)
 
 ## Features
 
-### Core Panel
-- Single binary deployment (Go backend + embedded HTML/CSS/JS)
-- Dark theme UI with glassmorphism design
-- JWT authentication with bcrypt password hashing
-- User management with subscription links (V2Ray base64 format)
-- Protocol support: VLESS+Reality, VLESS+WebSocket, Shadowsocks
-- Xray-core process management with live restart
-- Traffic monitoring, limits, and expiry dates
-- Responsive design (mobile-friendly)
+- **Dashboard** -- Real-time protocol health monitoring, user statistics, traffic overview, and censorship alerts
+- **User Management** -- Full CRUD with auto-generated subscription links, traffic tracking, and expiry management
+- **Protocol Support** -- VLESS+Reality, VLESS+WebSocket, Shadowsocks 2022 with per-protocol configuration
+- **ISP Intelligence** -- Unique censorship monitoring matrix by country, ISP, and protocol (not found in Remnawave)
+- **Subscription API** -- Public endpoint for V2Ray/Xray client configuration delivery
+- **Settings** -- Split tunneling, ad blocking, CDN domain, protocol toggling
+- **Dark Theme** -- Professional dark UI with teal accents, Outfit font, Tabler icons
 
-### ISP Intelligence (unique to HydraFlow)
-- Real-time ISP blocking data by country (Russia, China, Iran)
-- ISP x Protocol matrix table with color-coded status cells
-- Crowdsourced anonymous blocking reports via public API
-- Pre-seeded data for major ISPs: MegaFon, MTS, Beeline, Tele2, Rostelecom, China Telecom, China Unicom, China Mobile, Irancell, MCI, and more
-
-### Protocol Health Monitor (unique to HydraFlow)
-- Live TCP health checks for each configured protocol port
-- Dashboard widget showing status, port, and latency for Reality, WS, and SS
-- Auto-refresh every 30 seconds with 5-minute server-side cache
-- Instant visibility into which protocols are up or down
-
-### Censorship Alerts (unique to HydraFlow)
-- Automatic alert generation when protocol status changes (working to blocked, etc.)
-- Dashboard feed with the most recent alerts
-- Color-coded by severity: red for blocked, green for recovered, yellow for degraded
-
-### Public Subscription Page (unique to HydraFlow)
-- Branded dark-themed page at `/p/:token` for end users
-- Shows account status, QR code, and subscription URL
-- Download links for v2rayNG, Hiddify, Streisand, NekoBox
-- Setup guides per device (Android, iOS, Windows/macOS)
-- Multi-language support (detects browser Accept-Language)
-- No authentication required -- designed for end-user self-service
-
-## Screenshots
-
-| Dashboard | Intelligence | Subscription Page |
-|-----------|-------------|-------------------|
-| Server stats, protocol health cards, and censorship alerts feed | ISP x Protocol blocking matrix with country tabs | Branded user page with QR code, app links, and setup guides |
-
-## Quick Start
-
-### Binary
-
-```bash
-go build -o hydraflow-panel .
-./hydraflow-panel --listen :2080 --db ./panel.json --xray-config ./xray-config.json
-```
-
-### Docker Compose
-
-```yaml
-version: "3.8"
-services:
-  panel:
-    image: ghcr.io/evr1kys/hydraflow-panel:latest
-    ports:
-      - "2080:2080"
-    volumes:
-      - ./data:/etc/hydraflow
-    restart: unless-stopped
-```
-
-```bash
-docker compose up -d
-```
-
-Default credentials: `admin@hydraflow.dev` / `admin`
-
-Open `http://your-server:2080` in your browser.
-
-## Comparison with Remnawave
+### Comparison with Remnawave
 
 | Feature | HydraFlow Panel | Remnawave |
 |---------|----------------|-----------|
-| Deployment | Single Go binary | Node.js + PostgreSQL + Redis |
-| ISP Intelligence | Built-in blocking matrix | Not available |
-| Protocol Health | Live TCP health checks | Not available |
-| Censorship Alerts | Real-time alert feed | Not available |
-| Public Sub Page | Branded `/p/:token` page | Basic text endpoint |
-| Crowdsourced Reports | Anonymous blocking API | Not available |
-| Multi-language Sub | Auto-detect from browser | Not available |
-| Database | JSON file (zero config) | PostgreSQL required |
-| Memory footprint | ~15 MB | ~200+ MB (Node + PG + Redis) |
-| Dependencies | None (single binary) | Node.js, npm, PostgreSQL, Redis |
-| Protocols | Reality, WS, Shadowsocks | Reality, WS, Shadowsocks |
-| User Management | Full CRUD + traffic limits | Full CRUD + traffic limits |
-| Subscription Format | V2Ray base64 | V2Ray base64 |
+| ISP Intelligence Map | Yes | No |
+| Censorship Alerts | Yes | No |
+| Protocol Health Monitor | Yes | Partial |
+| Split Tunneling Config | Yes | No |
+| Ad Blocking Toggle | Yes | No |
+| Multi-protocol | Reality + WS + SS | Reality + WS |
+| Dark Theme | Custom dark | Default |
+
+## Quick Start
+
+```bash
+git clone https://github.com/Evr1kys/HydraFlow-Panel.git
+cd HydraFlow-Panel
+cp .env.example .env
+# Edit .env with your secrets
+docker-compose up -d
+```
+
+Panel will be available at `http://localhost:2080`
+
+Default credentials: `admin@hydraflow.dev` / `admin`
 
 ## Architecture
 
 ```
-+------------------------------------------------------------------+
-|  HydraFlow Panel (single Go binary)                              |
-|                                                                  |
-|  +------------------+  +------------------+  +-----------------+ |
-|  |  HTTP Server     |  |  Auth Manager    |  |  Xray Manager   | |
-|  |  (stdlib)        |  |  (JWT + bcrypt)  |  |  (process ctl)  | |
-|  +--------+---------+  +------------------+  +-----------------+ |
-|           |                                                      |
-|  +--------v---------+  +------------------+  +-----------------+ |
-|  |  API Handlers     |  |  Intelligence    |  |  Health Cache   | |
-|  |  /api/*           |  |  Store           |  |  (5m TTL)       | |
-|  +------------------+  |  (in-memory)      |  +-----------------+ |
-|                        +------------------+                      |
-|  +------------------+  +------------------+                      |
-|  |  JSON Database   |  |  Static Files    |                      |
-|  |  (atomic writes) |  |  (go:embed)      |                      |
-|  +------------------+  +------------------+                      |
-+------------------------------------------------------------------+
-         |                        |
-         v                        v
-  +-------------+          +-------------+
-  | panel.json  |          | xray-core   |
-  | (file)      |          | (subprocess)|
-  +-------------+          +-------------+
+backend/           NestJS + TypeScript + Prisma + PostgreSQL
+  src/
+    auth/          JWT authentication
+    users/         User management + subscription tokens
+    xray/          Xray process control + config generation
+    settings/      Server and protocol settings
+    dashboard/     Statistics and health checks
+    intelligence/  ISP censorship monitoring
+    subscription/  Public subscription endpoint
+    health/        Protocol port connectivity checks
+    prisma/        Database service
+
+frontend/          React + Vite + Mantine v7
+  src/
+    api/           Axios API client functions
+    components/    AppShell, AuthProvider
+    pages/         Dashboard, Users, Settings, Intelligence, Login
 ```
-
-## CLI Flags
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--listen` | `:2080` | HTTP listen address |
-| `--db` | `/etc/hydraflow/panel.json` | Path to JSON database |
-| `--xray-config` | `/etc/hydraflow/xray-config.json` | Path to xray config |
 
 ## API Reference
 
-### Authenticated Endpoints (require JWT Bearer token)
+### Authentication
+- `POST /api/auth/login` -- Login with email/password, returns JWT
+- `POST /api/auth/change-password` -- Change admin password
 
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/api/login` | Authenticate and receive JWT |
-| GET | `/api/status` | Server status and stats |
-| GET/POST | `/api/users` | List or create users |
-| DELETE | `/api/users/:id` | Delete user |
-| POST | `/api/users/:id/toggle` | Enable/disable user |
-| GET | `/api/users/:id/sub` | Get subscription link |
-| GET/POST | `/api/settings` | Protocol settings |
-| POST | `/api/xray/restart` | Restart xray-core |
-| GET | `/api/xray/status` | Xray running status |
-| POST | `/api/admin/password` | Change admin password |
-| GET | `/api/intelligence` | ISP blocking data (optional `?country=russia`) |
-| GET | `/api/alerts` | Recent censorship alerts |
-| GET | `/api/health` | Protocol health check results |
+### Users
+- `GET /api/users` -- List all users
+- `POST /api/users` -- Create user
+- `PATCH /api/users/:id` -- Update user
+- `DELETE /api/users/:id` -- Delete user
+- `POST /api/users/:id/toggle` -- Toggle user enabled/disabled
 
-### Public Endpoints (no auth)
+### Settings
+- `GET /api/settings` -- Get current settings
+- `PATCH /api/settings` -- Update settings (rebuilds xray config)
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/sub/:token` | V2Ray subscription (base64) |
-| GET | `/p/:token` | Branded subscription page |
-| POST | `/api/intelligence/report` | Submit anonymous blocking report |
+### Xray
+- `GET /api/xray/status` -- Get xray process status
+- `POST /api/xray/restart` -- Restart xray process
 
-### Intelligence Report Format
+### Dashboard
+- `GET /api/dashboard/stats` -- Get dashboard statistics
 
-```json
-POST /api/intelligence/report
-{
-  "country": "russia",
-  "isp": "MegaFon",
-  "asn": "AS31133",
-  "protocol": "VLESS+Reality",
-  "status": "working"
-}
+### Intelligence
+- `GET /api/intelligence` -- Get ISP intelligence map
+- `POST /api/intelligence/report` -- Submit ISP report
+- `GET /api/alerts` -- Get censorship alerts
+
+### Subscription
+- `GET /sub/:token` -- Public subscription endpoint (no auth)
+
+### Health
+- `GET /api/health` -- Protocol port health checks
+
+## Development
+
+### Backend
+```bash
+cd backend
+npm install
+npx prisma generate
+npx prisma migrate dev
+npm run start:dev
 ```
 
-Status values: `working`, `slow`, `blocked`, `unknown`
-
-## Tech Stack
-
-- **Backend:** Go 1.22, stdlib HTTP server, bcrypt, HMAC-SHA256 JWT, html/template
-- **Frontend:** Vanilla HTML/CSS/JS, embedded via `go:embed`
-- **Database:** JSON file with atomic writes (no external DB required)
-- **Fonts:** Outfit + JetBrains Mono
-- **Icons:** Inline SVG (Lucide-style, stroke-based)
+### Frontend
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
 ## License
 
@@ -205,5 +122,4 @@ MIT
 
 ## Links
 
-- [HydraFlow (main project)](https://github.com/Evr1kys/HydraFlow)
-- [HydraFlow Panel](https://github.com/Evr1kys/HydraFlow-Panel)
+- [HydraFlow Main Project](https://github.com/Evr1kys/HydraFlow)

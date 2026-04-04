@@ -1,0 +1,38 @@
+version: '3.8'
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: hydraflow
+      POSTGRES_USER: hydraflow
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-hydraflow_secret}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hydraflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build: ./backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://hydraflow:${DB_PASSWORD:-hydraflow_secret}@postgres:5432/hydraflow
+      JWT_SECRET: ${JWT_SECRET:-change_this_secret}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@hydraflow.dev}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+    ports:
+      - "3000:3000"
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      - backend
+    ports:
+      - "2080:80"
+
+volumes:
+  pgdata:
