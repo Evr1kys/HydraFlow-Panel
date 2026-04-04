@@ -4,8 +4,17 @@ import (
 	"crypto/rand"; "encoding/base64"; "encoding/json"; "fmt"; "net"; "net/http"; "runtime"; "strings"; "time"
 )
 
-type Handler struct { db *Database; xray *XrayManager; auth *AuthManager }
-func NewHandler(db *Database, xray *XrayManager, auth *AuthManager) *Handler { return &Handler{db: db, xray: xray, auth: auth} }
+type Handler struct {
+	db          *Database
+	xray        *XrayManager
+	auth        *AuthManager
+	intel       *IntelligenceStore
+	healthCache *HealthCache
+}
+
+func NewHandler(db *Database, xray *XrayManager, auth *AuthManager) *Handler {
+	return &Handler{db: db, xray: xray, auth: auth, intel: NewIntelligenceStore(), healthCache: NewHealthCache()}
+}
 func jsonResponse(w http.ResponseWriter, s int, d interface{}) { w.Header().Set("Content-Type", "application/json"); w.WriteHeader(s); _ = json.NewEncoder(w).Encode(d) }
 func jsonError(w http.ResponseWriter, s int, m string) { jsonResponse(w, s, map[string]string{"error": m}) }
 

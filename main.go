@@ -42,7 +42,12 @@ func main() {
 	mux.HandleFunc("/api/xray/restart", auth.RequireAuth(h.XrayRestart))
 	mux.HandleFunc("/api/xray/status", auth.RequireAuth(h.XrayStatus))
 	mux.HandleFunc("/api/admin/password", auth.RequireAuth(h.ChangePassword))
+	mux.HandleFunc("/api/intelligence", auth.RequireAuth(h.Intelligence))
+	mux.HandleFunc("/api/intelligence/report", h.IntelligenceReport)
+	mux.HandleFunc("/api/alerts", auth.RequireAuth(h.Alerts))
+	mux.HandleFunc("/api/health", auth.RequireAuth(h.ProtocolHealthCheck))
 	mux.HandleFunc("/sub/", h.Subscription)
+	mux.HandleFunc("/p/", h.SubscriptionPage)
 	sc, err := fs.Sub(staticFS, "static")
 	if err != nil { log.Fatalf("Failed to load static files: %v", err) }
 	fserv := http.FileServer(http.FS(sc))
