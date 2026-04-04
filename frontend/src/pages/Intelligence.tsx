@@ -36,6 +36,7 @@ const cardStyle = {
   backgroundColor: '#1E2128',
   border: '1px solid rgba(255,255,255,0.06)',
   borderRadius: 12,
+  boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
 };
 
 const inputStyles = {
@@ -89,19 +90,29 @@ function statusBadgeColor(status: string): string {
 
 function SectionTitle({ children }: { children: string }) {
   return (
-    <Text
-      size="11px"
-      fw={700}
-      mt="lg"
-      mb={8}
-      style={{
-        color: '#5c5f66',
-        letterSpacing: '1.5px',
-        textTransform: 'uppercase',
-      }}
-    >
-      {children}
-    </Text>
+    <Group gap={0} mt="lg" mb={8}>
+      <Box
+        style={{
+          width: 3,
+          height: 14,
+          borderRadius: 2,
+          backgroundColor: '#20C997',
+          marginRight: 8,
+          flexShrink: 0,
+        }}
+      />
+      <Text
+        size="11px"
+        fw={700}
+        style={{
+          color: '#5c5f66',
+          letterSpacing: '1.5px',
+          textTransform: 'uppercase',
+        }}
+      >
+        {children}
+      </Text>
+    </Group>
   );
 }
 

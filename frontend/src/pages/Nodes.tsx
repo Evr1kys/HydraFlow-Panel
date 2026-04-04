@@ -34,6 +34,7 @@ const cardStyle = {
   backgroundColor: '#1E2128',
   border: '1px solid rgba(255,255,255,0.06)',
   borderRadius: 12,
+  boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
 };
 
 const inputStyles = {
@@ -257,7 +258,7 @@ export function NodesPage() {
                       transition: 'background-color 0.15s ease',
                     }}
                     onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(255,255,255,0.03)';
+                      (e.currentTarget as HTMLElement).style.backgroundColor = '#252A35';
                     }}
                     onMouseLeave={(e) => {
                       (e.currentTarget as HTMLElement).style.backgroundColor =

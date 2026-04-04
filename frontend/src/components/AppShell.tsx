@@ -127,13 +127,13 @@ export function AppShellLayout() {
           </Group>
         </MantineAppShell.Section>
 
-        {/* Navigation sections */}
+        {/* Navigation sections - tighter spacing */}
         <MantineAppShell.Section grow style={{ overflowY: 'auto' }}>
           {navSections.map((section) => (
-            <Box key={section.label} mb={16}>
+            <Box key={section.label} mb={12}>
               <Box
                 px={12}
-                py={4}
+                py={2}
                 mb={4}
                 style={{
                   borderLeft: `3px solid ${section.color}`,
@@ -163,9 +163,9 @@ export function AppShellLayout() {
                       alignItems: 'center',
                       gap: 10,
                       width: '100%',
-                      padding: '8px 12px',
+                      padding: '6px 12px',
                       borderRadius: 8,
-                      marginBottom: 2,
+                      marginBottom: 1,
                       backgroundColor: active ? 'rgba(32, 201, 151, 0.15)' : 'transparent',
                       color: active ? '#20C997' : '#909296',
                       fontWeight: active ? 600 : 400,
@@ -211,7 +211,7 @@ export function AppShellLayout() {
                 alignItems: 'center',
                 gap: 10,
                 width: '100%',
-                padding: '8px 12px',
+                padding: '6px 12px',
                 borderRadius: 8,
                 color: '#909296',
                 fontSize: '13.5px',
@@ -264,15 +264,21 @@ export function AppShellLayout() {
                 backgroundColor: 'rgba(255,255,255,0.04)',
                 border: '1px solid rgba(255,255,255,0.06)',
                 color: '#909296',
-                transition: 'all 0.15s ease',
+                transition: 'all 0.2s ease',
               }}
               onMouseEnter={(e) => {
-                (e.currentTarget as HTMLElement).style.color = '#339AF0';
-                (e.currentTarget as HTMLElement).style.borderColor = 'rgba(51,154,240,0.3)';
+                const el = e.currentTarget as HTMLElement;
+                el.style.color = '#339AF0';
+                el.style.borderColor = 'rgba(51,154,240,0.3)';
+                el.style.transform = 'translateY(-1px)';
+                el.style.boxShadow = '0 2px 8px rgba(51,154,240,0.15)';
               }}
               onMouseLeave={(e) => {
-                (e.currentTarget as HTMLElement).style.color = '#909296';
-                (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.06)';
+                const el = e.currentTarget as HTMLElement;
+                el.style.color = '#909296';
+                el.style.borderColor = 'rgba(255,255,255,0.06)';
+                el.style.transform = 'translateY(0)';
+                el.style.boxShadow = 'none';
               }}
             >
               <IconBrandTelegram size={18} stroke={1.5} />
@@ -297,15 +303,21 @@ export function AppShellLayout() {
                 color: '#909296',
                 fontSize: '13px',
                 textDecoration: 'none',
-                transition: 'all 0.15s ease',
+                transition: 'all 0.2s ease',
               }}
               onMouseEnter={(e) => {
-                (e.currentTarget as HTMLElement).style.color = '#C1C2C5';
-                (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.12)';
+                const el = e.currentTarget as HTMLElement;
+                el.style.color = '#C1C2C5';
+                el.style.borderColor = 'rgba(255,255,255,0.12)';
+                el.style.transform = 'translateY(-1px)';
+                el.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)';
               }}
               onMouseLeave={(e) => {
-                (e.currentTarget as HTMLElement).style.color = '#909296';
-                (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.06)';
+                const el = e.currentTarget as HTMLElement;
+                el.style.color = '#909296';
+                el.style.borderColor = 'rgba(255,255,255,0.06)';
+                el.style.transform = 'translateY(0)';
+                el.style.boxShadow = 'none';
               }}
             >
               <IconBrandGithub size={16} stroke={1.5} />
