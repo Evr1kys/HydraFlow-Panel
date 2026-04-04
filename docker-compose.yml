@@ -25,7 +25,7 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@hydraflow.dev}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
     ports:
-      - "3000:3000"
+      - "3100:3000"
 
   frontend:
     build: ./frontend
