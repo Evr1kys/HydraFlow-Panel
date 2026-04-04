@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Res, Headers } from '@nestjs/common';
+import { Controller, Get, Param, Res, Headers, Query } from '@nestjs/common';
 import { Response } from 'express';
 import { SubscriptionService } from './subscription.service';
 
@@ -11,16 +11,28 @@ export class SubscriptionController {
     @Param('token') token: string,
     @Res() res: Response,
     @Headers('user-agent') userAgent?: string,
+    @Query('hwid') hwid?: string,
+    @Query('platform') platform?: string,
   ) {
-    const base64Links = await this.subscriptionService.generateLinks(token);
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    const result = await this.subscriptionService.generateLinks(
+      token,
+      userAgent ?? '',
+      hwid,
+      platform,
+    );
+
+    res.setHeader('Content-Type', result.contentType);
     res.setHeader(
       'Content-Disposition',
       'inline; filename="subscription.txt"',
     );
-    res.setHeader('Subscription-Userinfo', 'upload=0; download=0; total=0');
-    void userAgent;
-    res.send(base64Links);
+    res.setHeader(
+      'Subscription-Userinfo',
+      `upload=${result.userInfo.upload}; download=${result.userInfo.download}; total=${result.userInfo.total ?? 0}${result.userInfo.expire ? `; expire=${Math.floor(result.userInfo.expire.getTime() / 1000)}` : ''}`,
+    );
+    res.setHeader('Profile-Update-Interval', '12');
+    res.setHeader('Profile-Title', 'HydraFlow');
+    res.send(result.content);
   }
 
   @Get('p/:token')

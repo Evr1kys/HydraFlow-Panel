@@ -1,5 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { HwidService } from '../hwid/hwid.service';
+
+type ClientFormat = 'base64' | 'clash' | 'singbox';
 
 function formatBytes(bytes: bigint): string {
   const num = Number(bytes);
@@ -19,11 +22,55 @@ function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
+function detectClientFormat(userAgent: string): ClientFormat {
+  const ua = userAgent.toLowerCase();
+
+  // Clash-based clients
+  if (ua.includes('clash') || ua.includes('stash') || ua.includes('meta')) {
+    return 'clash';
+  }
+
+  // sing-box based clients
+  if (ua.includes('sing-box') || ua.includes('singbox') || ua.includes('sfi') || ua.includes('sfa')) {
+    return 'singbox';
+  }
+
+  // Default: base64 (v2rayNG, V2rayN, Nekoray, Streisand, V2Box, etc.)
+  return 'base64';
+}
+
+interface SubscriptionUserInfo {
+  upload: bigint;
+  download: bigint;
+  total: bigint | null;
+  expire: Date | null;
+}
+
+function buildSubscriptionUserInfoHeader(info: SubscriptionUserInfo): string {
+  const parts = [
+    `upload=${info.upload}`,
+    `download=${info.download}`,
+    `total=${info.total ?? 0}`,
+  ];
+  if (info.expire) {
+    parts.push(`expire=${Math.floor(info.expire.getTime() / 1000)}`);
+  }
+  return parts.join('; ');
+}
+
 @Injectable()
 export class SubscriptionService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly hwidService: HwidService,
+  ) {}
 
-  async generateLinks(token: string): Promise<string> {
+  async generateLinks(
+    token: string,
+    userAgent: string = '',
+    hwid?: string,
+    platform?: string,
+  ): Promise<{ content: string; contentType: string; userInfo: SubscriptionUserInfo }> {
     const user = await this.prisma.user.findUnique({
       where: { subToken: token },
     });
@@ -36,6 +83,16 @@ export class SubscriptionService {
       throw new NotFoundException('Subscription expired');
     }
 
+    // HWID check if provided
+    if (hwid) {
+      const hwidResult = await this.hwidService.checkDevice(user.id, hwid, platform);
+      if (!hwidResult.allowed) {
+        throw new ForbiddenException(
+          `Device limit reached (${hwidResult.currentDevices}/${hwidResult.maxDevices}). Remove a device to continue.`,
+        );
+      }
+    }
+
     const settings = await this.prisma.settings.findUnique({
       where: { id: 'main' },
     });
@@ -44,6 +101,50 @@ export class SubscriptionService {
       throw new NotFoundException('Server not configured');
     }
 
+    const userInfo: SubscriptionUserInfo = {
+      upload: user.trafficUp,
+      download: user.trafficDown,
+      total: user.trafficLimit,
+      expire: user.expiryDate,
+    };
+
+    const clientFormat = detectClientFormat(userAgent);
+
+    if (clientFormat === 'clash') {
+      const clashConfig = this.generateClashConfig(user, settings);
+      return { content: clashConfig, contentType: 'text/yaml; charset=utf-8', userInfo };
+    }
+
+    if (clientFormat === 'singbox') {
+      const singboxConfig = this.generateSingboxConfig(user, settings);
+      return { content: singboxConfig, contentType: 'application/json; charset=utf-8', userInfo };
+    }
+
+    // Default: base64 links
+    const links = this.generateBase64Links(user, settings);
+    return { content: links, contentType: 'text/plain; charset=utf-8', userInfo };
+  }
+
+  private generateBase64Links(
+    user: { uuid: string; remark: string | null; email: string },
+    settings: {
+      serverIp: string | null;
+      realityEnabled: boolean;
+      realityPort: number;
+      realityPbk: string | null;
+      realitySni: string;
+      realitySid: string | null;
+      wsEnabled: boolean;
+      wsPort: number;
+      wsPath: string | null;
+      wsHost: string | null;
+      cdnDomain: string | null;
+      ssEnabled: boolean;
+      ssPort: number;
+      ssMethod: string;
+      ssPassword: string | null;
+    },
+  ): string {
     const links: string[] = [];
     const serverIp = settings.serverIp ?? '127.0.0.1';
     const remark = user.remark ?? user.email;
@@ -88,6 +189,257 @@ export class SubscriptionService {
     return Buffer.from(links.join('\n')).toString('base64');
   }
 
+  private generateClashConfig(
+    user: { uuid: string; remark: string | null; email: string },
+    settings: {
+      serverIp: string | null;
+      realityEnabled: boolean;
+      realityPort: number;
+      realityPbk: string | null;
+      realitySni: string;
+      realitySid: string | null;
+      wsEnabled: boolean;
+      wsPort: number;
+      wsPath: string | null;
+      wsHost: string | null;
+      cdnDomain: string | null;
+      ssEnabled: boolean;
+      ssPort: number;
+      ssMethod: string;
+      ssPassword: string | null;
+      splitTunneling: boolean;
+    },
+  ): string {
+    const serverIp = settings.serverIp ?? '127.0.0.1';
+    const remark = user.remark ?? user.email;
+    const proxies: string[] = [];
+    const proxyNames: string[] = [];
+
+    if (settings.realityEnabled) {
+      const name = `${remark}-reality`;
+      proxyNames.push(name);
+      proxies.push(
+        `  - name: "${name}"\n` +
+        `    type: vless\n` +
+        `    server: ${serverIp}\n` +
+        `    port: ${settings.realityPort}\n` +
+        `    uuid: ${user.uuid}\n` +
+        `    network: tcp\n` +
+        `    tls: true\n` +
+        `    udp: true\n` +
+        `    flow: xtls-rprx-vision\n` +
+        `    servername: ${settings.realitySni}\n` +
+        `    reality-opts:\n` +
+        `      public-key: ${settings.realityPbk ?? ''}\n` +
+        `      short-id: ${settings.realitySid ?? ''}\n` +
+        `    client-fingerprint: chrome`,
+      );
+    }
+
+    if (settings.wsEnabled) {
+      const host = settings.cdnDomain ?? settings.wsHost ?? serverIp;
+      const name = `${remark}-ws`;
+      proxyNames.push(name);
+      proxies.push(
+        `  - name: "${name}"\n` +
+        `    type: vless\n` +
+        `    server: ${host}\n` +
+        `    port: ${settings.wsPort}\n` +
+        `    uuid: ${user.uuid}\n` +
+        `    network: ws\n` +
+        `    tls: false\n` +
+        `    udp: true\n` +
+        `    ws-opts:\n` +
+        `      path: ${settings.wsPath ?? '/ws'}\n` +
+        `      headers:\n` +
+        `        Host: ${host}`,
+      );
+    }
+
+    if (settings.ssEnabled && settings.ssPassword) {
+      const name = `${remark}-ss`;
+      proxyNames.push(name);
+      proxies.push(
+        `  - name: "${name}"\n` +
+        `    type: ss\n` +
+        `    server: ${serverIp}\n` +
+        `    port: ${settings.ssPort}\n` +
+        `    cipher: ${settings.ssMethod}\n` +
+        `    password: "${settings.ssPassword}"`,
+      );
+    }
+
+    const proxyNamesYaml = proxyNames.map((n) => `      - "${n}"`).join('\n');
+
+    let rules = '';
+    if (settings.splitTunneling) {
+      rules =
+        `rules:\n` +
+        `  - DOMAIN-SUFFIX,ru,DIRECT\n` +
+        `  - DOMAIN-SUFFIX,su,DIRECT\n` +
+        `  - DOMAIN-SUFFIX,xn--p1ai,DIRECT\n` +
+        `  - GEOIP,RU,DIRECT\n` +
+        `  - MATCH,proxy`;
+    } else {
+      rules = `rules:\n  - MATCH,proxy`;
+    }
+
+    return (
+      `mixed-port: 7890\n` +
+      `allow-lan: false\n` +
+      `mode: rule\n` +
+      `log-level: info\n` +
+      `\n` +
+      `proxies:\n` +
+      proxies.join('\n\n') + '\n' +
+      `\n` +
+      `proxy-groups:\n` +
+      `  - name: proxy\n` +
+      `    type: select\n` +
+      `    proxies:\n` +
+      proxyNamesYaml + '\n' +
+      `\n` +
+      rules + '\n'
+    );
+  }
+
+  private generateSingboxConfig(
+    user: { uuid: string; remark: string | null; email: string },
+    settings: {
+      serverIp: string | null;
+      realityEnabled: boolean;
+      realityPort: number;
+      realityPbk: string | null;
+      realitySni: string;
+      realitySid: string | null;
+      wsEnabled: boolean;
+      wsPort: number;
+      wsPath: string | null;
+      wsHost: string | null;
+      cdnDomain: string | null;
+      ssEnabled: boolean;
+      ssPort: number;
+      ssMethod: string;
+      ssPassword: string | null;
+      splitTunneling: boolean;
+    },
+  ): string {
+    const serverIp = settings.serverIp ?? '127.0.0.1';
+    const remark = user.remark ?? user.email;
+    const outbounds: Record<string, unknown>[] = [];
+    const tags: string[] = [];
+
+    if (settings.realityEnabled) {
+      const tag = `${remark}-reality`;
+      tags.push(tag);
+      outbounds.push({
+        type: 'vless',
+        tag,
+        server: serverIp,
+        server_port: settings.realityPort,
+        uuid: user.uuid,
+        flow: 'xtls-rprx-vision',
+        tls: {
+          enabled: true,
+          server_name: settings.realitySni,
+          utls: { enabled: true, fingerprint: 'chrome' },
+          reality: {
+            enabled: true,
+            public_key: settings.realityPbk ?? '',
+            short_id: settings.realitySid ?? '',
+          },
+        },
+      });
+    }
+
+    if (settings.wsEnabled) {
+      const host = settings.cdnDomain ?? settings.wsHost ?? serverIp;
+      const tag = `${remark}-ws`;
+      tags.push(tag);
+      outbounds.push({
+        type: 'vless',
+        tag,
+        server: host,
+        server_port: settings.wsPort,
+        uuid: user.uuid,
+        transport: {
+          type: 'ws',
+          path: settings.wsPath ?? '/ws',
+          headers: { Host: host },
+        },
+      });
+    }
+
+    if (settings.ssEnabled && settings.ssPassword) {
+      const tag = `${remark}-ss`;
+      tags.push(tag);
+      outbounds.push({
+        type: 'shadowsocks',
+        tag,
+        server: serverIp,
+        server_port: settings.ssPort,
+        method: settings.ssMethod,
+        password: settings.ssPassword,
+      });
+    }
+
+    outbounds.push({
+      type: 'selector',
+      tag: 'proxy',
+      outbounds: tags,
+      default: tags[0] ?? '',
+    });
+
+    outbounds.push({ type: 'direct', tag: 'direct' });
+    outbounds.push({ type: 'block', tag: 'block' });
+    outbounds.push({ type: 'dns', tag: 'dns-out' });
+
+    const rules: Record<string, unknown>[] = [];
+    if (settings.splitTunneling) {
+      rules.push({
+        domain_suffix: ['.ru', '.su', '.xn--p1ai'],
+        outbound: 'direct',
+      });
+      rules.push({
+        geoip: ['RU'],
+        outbound: 'direct',
+      });
+    }
+    rules.push({ protocol: 'dns', outbound: 'dns-out' });
+
+    const config = {
+      log: { level: 'info' },
+      dns: {
+        servers: [
+          { tag: 'google', address: 'tls://8.8.8.8' },
+          { tag: 'local', address: 'local', detour: 'direct' },
+        ],
+        rules: [
+          { outbound: 'any', server: 'local' },
+        ],
+      },
+      inbounds: [
+        {
+          type: 'tun',
+          tag: 'tun-in',
+          inet4_address: '172.19.0.1/30',
+          auto_route: true,
+          strict_route: true,
+          stack: 'system',
+          sniff: true,
+        },
+      ],
+      outbounds,
+      route: {
+        rules,
+        final: 'proxy',
+        auto_detect_interface: true,
+      },
+    };
+
+    return JSON.stringify(config, null, 2);
+  }
+
   async generatePage(token: string): Promise<string> {
     const user = await this.prisma.user.findUnique({
       where: { subToken: token },
@@ -130,6 +482,10 @@ export class SubscriptionService {
     if (settings?.realityEnabled) protocols.push('VLESS+Reality');
     if (settings?.wsEnabled) protocols.push('VLESS+WebSocket');
     if (settings?.ssEnabled) protocols.push('Shadowsocks');
+
+    const deviceCount = await this.prisma.hwidDevice.count({
+      where: { userId: user.id },
+    });
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -268,6 +624,10 @@ export class SubscriptionService {
       <div class="info-row">
         <span class="info-label">Expires</span>
         <span class="info-value">${expiryDate}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Devices</span>
+        <span class="info-value">${deviceCount} / ${user.maxDevices}</span>
       </div>
     </div>
 

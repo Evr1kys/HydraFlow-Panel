@@ -11,7 +11,10 @@ model Admin {
   id            String         @id @default(uuid())
   email         String         @unique
   password      String
+  totpSecret    String?
+  totpEnabled   Boolean        @default(false)
   createdAt     DateTime       @default(now())
+  sessions      Session[]
   passkeys      Passkey[]
   oauthAccounts OAuthAccount[]
 }
@@ -49,10 +52,13 @@ model User {
   trafficDown    BigInt          @default(0)
   trafficLimit   BigInt?
   expiryDate     DateTime?
+  maxDevices     Int             @default(3)
   remark         String?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
   activeSessions ActiveSession[]
+  trafficHistory UserTraffic[]
+  devices        HwidDevice[]
 }
 
 model Settings {
@@ -177,4 +183,48 @@ model ActiveSession {
   bytesDown  BigInt   @default(0)
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   node       Node?    @relation(fields: [nodeId], references: [id], onDelete: SetNull)
+}
+
+model UserTraffic {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  upload    BigInt   @default(0)
+  download  BigInt   @default(0)
+  period    String   // "hourly", "daily", "monthly"
+  date      DateTime
+  createdAt DateTime @default(now())
+  @@index([userId, period, date])
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  adminId   String
+  admin     Admin    @relation(fields: [adminId], references: [id])
+  token     String   @unique
+  userAgent String?
+  ip        String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model ConfigProfile {
+  id        String   @id @default(uuid())
+  name      String
+  config    String   // JSON xray config template
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model HwidDevice {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hwid      String
+  platform  String?  // "android", "ios", "windows", "macos"
+  lastSeen  DateTime @default(now())
+  createdAt DateTime @default(now())
+  @@unique([userId, hwid])
+  @@index([userId])
 }

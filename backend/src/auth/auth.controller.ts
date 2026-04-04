@@ -12,6 +12,7 @@ import { AuthService } from './auth.service';
 import { SessionsService } from './sessions.service';
 import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { Verify2faDto, Disable2faDto } from './dto/setup-2fa.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 
 interface AuthenticatedRequest {
@@ -42,6 +43,30 @@ export class AuthController {
     @Body() dto: ChangePasswordDto,
   ) {
     return this.authService.changePassword(req.user.id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('2fa/setup')
+  setup2fa(@Request() req: AuthenticatedRequest) {
+    return this.authService.setup2fa(req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('2fa/verify')
+  verify2fa(
+    @Request() req: AuthenticatedRequest,
+    @Body() dto: Verify2faDto,
+  ) {
+    return this.authService.verify2fa(req.user.id, dto.code);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('2fa/disable')
+  disable2fa(
+    @Request() req: AuthenticatedRequest,
+    @Body() dto: Disable2faDto,
+  ) {
+    return this.authService.disable2fa(req.user.id, dto.code);
   }
 
   @UseGuards(JwtAuthGuard)

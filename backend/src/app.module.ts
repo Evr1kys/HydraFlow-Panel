@@ -14,6 +14,11 @@ import { WebhooksModule } from './webhooks/webhooks.module';
 import { BillingModule } from './billing/billing.module';
 import { PluginsModule } from './plugins/plugins.module';
 import { SessionsExplorerModule } from './sessions-explorer/sessions-explorer.module';
+import { TelegramModule } from './telegram/telegram.module';
+import { TrafficModule } from './traffic/traffic.module';
+import { HwidModule } from './hwid/hwid.module';
+import { ConfigProfilesModule } from './config-profiles/config-profiles.module';
+import { MetricsModule } from './metrics/metrics.module';
 
 @Module({
   imports: [
@@ -32,6 +37,11 @@ import { SessionsExplorerModule } from './sessions-explorer/sessions-explorer.mo
     BillingModule,
     PluginsModule,
     SessionsExplorerModule,
+    TelegramModule,
+    TrafficModule,
+    HwidModule,
+    ConfigProfilesModule,
+    MetricsModule,
   ],
 })
 export class AppModule {}
