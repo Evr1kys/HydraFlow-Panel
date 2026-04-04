@@ -1,7 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { WebhooksService } from '../webhooks/webhooks.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { BulkIdsDto } from './dto/bulk-ids.dto';
 
 export interface SerializedUser {
   id: string;
@@ -42,7 +44,10 @@ function serializeUser(user: {
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly webhooksService: WebhooksService,
+  ) {}
 
   async findAll(): Promise<SerializedUser[]> {
     const users = await this.prisma.user.findMany({
@@ -70,7 +75,9 @@ export class UsersService {
         expiryDate: dto.expiryDate ? new Date(dto.expiryDate) : undefined,
       },
     });
-    return serializeUser(user);
+    const serialized = serializeUser(user);
+    await this.webhooksService.fire('user.created', { user: serialized });
+    return serialized;
   }
 
   async update(id: string, dto: UpdateUserDto): Promise<SerializedUser> {
@@ -92,8 +99,9 @@ export class UsersService {
   }
 
   async remove(id: string): Promise<{ message: string }> {
-    await this.findOne(id);
+    const user = await this.findOne(id);
     await this.prisma.user.delete({ where: { id } });
+    await this.webhooksService.fire('user.deleted', { user });
     return { message: 'User deleted' };
   }
 
@@ -106,7 +114,9 @@ export class UsersService {
       where: { id },
       data: { enabled: !existing.enabled },
     });
-    return serializeUser(user);
+    const serialized = serializeUser(user);
+    await this.webhooksService.fire('user.toggled', { user: serialized });
+    return serialized;
   }
 
   async findBySubToken(token: string) {
@@ -117,6 +127,29 @@ export class UsersService {
       throw new NotFoundException('Invalid subscription token');
     }
     return serializeUser(user);
+  }
+
+  async bulkEnable(dto: BulkIdsDto): Promise<{ count: number }> {
+    const result = await this.prisma.user.updateMany({
+      where: { id: { in: dto.ids } },
+      data: { enabled: true },
+    });
+    return { count: result.count };
+  }
+
+  async bulkDisable(dto: BulkIdsDto): Promise<{ count: number }> {
+    const result = await this.prisma.user.updateMany({
+      where: { id: { in: dto.ids } },
+      data: { enabled: false },
+    });
+    return { count: result.count };
+  }
+
+  async bulkDelete(dto: BulkIdsDto): Promise<{ count: number }> {
+    const result = await this.prisma.user.deleteMany({
+      where: { id: { in: dto.ids } },
+    });
+    return { count: result.count };
   }
 
   async getStats() {

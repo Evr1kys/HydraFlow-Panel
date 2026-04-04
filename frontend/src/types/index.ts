@@ -83,3 +83,34 @@ export interface IntelligenceEntry {
   country: string;
   protocols: Record<string, string>;
 }
+
+export interface Node {
+  id: string;
+  name: string;
+  address: string;
+  port: number;
+  apiKey: string;
+  enabled: boolean;
+  status: string;
+  lastCheck: string | null;
+  createdAt: string;
+}
+
+export interface Webhook {
+  id: string;
+  url: string;
+  events: string[];
+  secret: string;
+  enabled: boolean;
+  createdAt: string;
+}
+
+export interface Session {
+  id: string;
+  adminId: string;
+  email: string;
+  token: string;
+  createdAt: string;
+  userAgent: string;
+  ip: string;
+}

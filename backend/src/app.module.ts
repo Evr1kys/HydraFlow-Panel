@@ -9,6 +9,8 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { IntelligenceModule } from './intelligence/intelligence.module';
 import { SubscriptionModule } from './subscription/subscription.module';
 import { HealthModule } from './health/health.module';
+import { NodesModule } from './nodes/nodes.module';
+import { WebhooksModule } from './webhooks/webhooks.module';
 
 @Module({
   imports: [
@@ -22,6 +24,8 @@ import { HealthModule } from './health/health.module';
     IntelligenceModule,
     SubscriptionModule,
     HealthModule,
+    NodesModule,
+    WebhooksModule,
   ],
 })
 export class AppModule {}

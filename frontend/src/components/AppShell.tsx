@@ -16,12 +16,14 @@ import {
   IconRadar,
   IconLogout,
   IconDroplet,
+  IconServer,
 } from '@tabler/icons-react';
 import { useAuth } from './AuthProvider';
 
 const navItems = [
   { label: 'Dashboard', icon: IconDashboard, path: '/' },
   { label: 'Users', icon: IconUsers, path: '/users' },
+  { label: 'Nodes', icon: IconServer, path: '/nodes' },
   { label: 'Intelligence', icon: IconRadar, path: '/intelligence' },
   { label: 'Settings', icon: IconSettings, path: '/settings' },
 ];

@@ -12,6 +12,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { BulkIdsDto } from './dto/bulk-ids.dto';
 
 @Controller('api/users')
 @UseGuards(JwtAuthGuard)
@@ -21,6 +22,21 @@ export class UsersController {
   @Get()
   findAll() {
     return this.usersService.findAll();
+  }
+
+  @Post('bulk/enable')
+  bulkEnable(@Body() dto: BulkIdsDto) {
+    return this.usersService.bulkEnable(dto);
+  }
+
+  @Post('bulk/disable')
+  bulkDisable(@Body() dto: BulkIdsDto) {
+    return this.usersService.bulkDisable(dto);
+  }
+
+  @Delete('bulk')
+  bulkDelete(@Body() dto: BulkIdsDto) {
+    return this.usersService.bulkDelete(dto);
   }
 
   @Get(':id')

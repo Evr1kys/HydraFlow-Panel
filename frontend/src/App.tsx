@@ -4,6 +4,7 @@ import { AppShellLayout } from './components/AppShell';
 import { LoginPage } from './pages/Login';
 import { DashboardPage } from './pages/Dashboard';
 import { UsersPage } from './pages/Users';
+import { NodesPage } from './pages/Nodes';
 import { SettingsPage } from './pages/Settings';
 import { IntelligencePage } from './pages/Intelligence';
 
@@ -21,6 +22,7 @@ export function App() {
         >
           <Route path="/" element={<DashboardPage />} />
           <Route path="/users" element={<UsersPage />} />
+          <Route path="/nodes" element={<NodesPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/intelligence" element={<IntelligencePage />} />
         </Route>

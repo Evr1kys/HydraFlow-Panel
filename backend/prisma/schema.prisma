@@ -74,3 +74,24 @@ model Alert {
   country   String
   createdAt DateTime @default(now())
 }
+
+model Node {
+  id        String   @id @default(uuid())
+  name      String
+  address   String
+  port      Int
+  apiKey    String   @default("")
+  enabled   Boolean  @default(true)
+  status    String   @default("unknown")
+  lastCheck DateTime?
+  createdAt DateTime @default(now())
+}
+
+model Webhook {
+  id        String   @id @default(uuid())
+  url       String
+  events    String[]
+  secret    String
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+}

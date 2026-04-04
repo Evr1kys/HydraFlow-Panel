@@ -32,3 +32,18 @@ export async function toggleUser(id: string): Promise<User> {
   const response = await client.post<User>(`/users/${id}/toggle`);
   return response.data;
 }
+
+export async function bulkEnableUsers(ids: string[]): Promise<{ count: number }> {
+  const response = await client.post<{ count: number }>('/users/bulk/enable', { ids });
+  return response.data;
+}
+
+export async function bulkDisableUsers(ids: string[]): Promise<{ count: number }> {
+  const response = await client.post<{ count: number }>('/users/bulk/disable', { ids });
+  return response.data;
+}
+
+export async function bulkDeleteUsers(ids: string[]): Promise<{ count: number }> {
+  const response = await client.delete<{ count: number }>('/users/bulk', { data: { ids } });
+  return response.data;
+}
