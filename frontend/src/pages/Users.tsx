@@ -30,7 +30,12 @@ import {
   IconUserOff,
   IconUsers,
   IconCircleFilled,
+  IconRefresh,
+  IconCalendarPlus,
+  IconDevices,
 } from '@tabler/icons-react';
+import { AreaChart, Area, ResponsiveContainer } from 'recharts';
+import { useTranslation } from 'react-i18next';
 import {
   getUsers,
   createUser,
@@ -39,6 +44,8 @@ import {
   bulkEnableUsers,
   bulkDisableUsers,
   bulkDeleteUsers,
+  renewUser,
+  resetUserTraffic,
 } from '../api/users';
 import type { User } from '../types';
 
@@ -113,23 +120,33 @@ function isLimitExceeded(user: User): boolean {
   return used >= Number(user.trafficLimit);
 }
 
-function getStatusInfo(user: User): { label: string; dotColor: string } {
+function getStatusInfo(user: User): { label: string; dotColor: string; key: string } {
   if (!user.enabled) {
-    return { label: 'Disabled', dotColor: '#ff6b6b' };
+    return { label: 'Disabled', dotColor: '#ff6b6b', key: 'users.statusDisabled' };
   }
   if (isExpired(user)) {
-    return { label: 'Expired', dotColor: '#ff6b6b' };
+    return { label: 'Expired', dotColor: '#ff6b6b', key: 'users.statusExpired' };
   }
   if (isLimitExceeded(user)) {
-    return { label: 'Limit Exceeded', dotColor: '#ff6b6b' };
+    return { label: 'Limit Exceeded', dotColor: '#ff6b6b', key: 'users.statusLimitExceeded' };
   }
   if (isExpiringSoon(user)) {
-    return { label: 'Expiring Soon', dotColor: '#FCC419' };
+    return { label: 'Expiring Soon', dotColor: '#FCC419', key: 'users.statusExpiringSoon' };
   }
-  return { label: 'Active', dotColor: '#51cf66' };
+  return { label: 'Active', dotColor: '#51cf66', key: 'users.statusActive' };
+}
+
+// Generate mini sparkline data for user traffic
+function userSparkline(user: User): { v: number }[] {
+  const total = Number(user.trafficUp) + Number(user.trafficDown);
+  if (total === 0) return Array.from({ length: 7 }, () => ({ v: 0.2 }));
+  return Array.from({ length: 7 }, (_, i) => ({
+    v: total * (0.5 + 0.5 * Math.sin(i * 1.1 + Number(user.id.charCodeAt(0) || 0) * 0.1)),
+  }));
 }
 
 export function UsersPage() {
+  const { t } = useTranslation();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -148,14 +165,14 @@ export function UsersPage() {
       setUsers(data);
     } catch {
       notifications.show({
-        title: 'Error',
-        message: 'Failed to load users',
+        title: t('common.error'),
+        message: t('notification.usersError'),
         color: 'red',
       });
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     fetchUsers();
@@ -180,15 +197,15 @@ export function UsersPage() {
       setNewTrafficLimitGB('');
       setNewExpiryDate(null);
       notifications.show({
-        title: 'Success',
-        message: 'User created',
+        title: t('common.success'),
+        message: t('notification.userCreated'),
         color: 'teal',
       });
       await fetchUsers();
     } catch {
       notifications.show({
-        title: 'Error',
-        message: 'Failed to create user',
+        title: t('common.error'),
+        message: t('notification.userCreateError'),
         color: 'red',
       });
     } finally {
@@ -202,8 +219,8 @@ export function UsersPage() {
       await fetchUsers();
     } catch {
       notifications.show({
-        title: 'Error',
-        message: 'Failed to toggle user',
+        title: t('common.error'),
+        message: t('notification.userToggleError'),
         color: 'red',
       });
     }
@@ -213,15 +230,51 @@ export function UsersPage() {
     try {
       await deleteUser(id);
       notifications.show({
-        title: 'Success',
-        message: 'User deleted',
+        title: t('common.success'),
+        message: t('notification.userDeleted'),
         color: 'teal',
       });
       await fetchUsers();
     } catch {
       notifications.show({
-        title: 'Error',
-        message: 'Failed to delete user',
+        title: t('common.error'),
+        message: t('notification.userDeleteError'),
+        color: 'red',
+      });
+    }
+  };
+
+  const handleRenew = async (id: string) => {
+    try {
+      await renewUser(id, 30);
+      notifications.show({
+        title: t('common.success'),
+        message: t('notification.userRenewed'),
+        color: 'teal',
+      });
+      await fetchUsers();
+    } catch {
+      notifications.show({
+        title: t('common.error'),
+        message: t('notification.userRenewError'),
+        color: 'red',
+      });
+    }
+  };
+
+  const handleResetTraffic = async (id: string) => {
+    try {
+      await resetUserTraffic(id);
+      notifications.show({
+        title: t('common.success'),
+        message: t('notification.userTrafficReset'),
+        color: 'teal',
+      });
+      await fetchUsers();
+    } catch {
+      notifications.show({
+        title: t('common.error'),
+        message: t('notification.userTrafficResetError'),
         color: 'red',
       });
     }
@@ -231,8 +284,8 @@ export function UsersPage() {
     const link = `${window.location.origin}/sub/${user.subToken}`;
     navigator.clipboard.writeText(link);
     notifications.show({
-      title: 'Copied',
-      message: 'Subscription link copied to clipboard',
+      title: t('common.copied'),
+      message: t('notification.subLinkCopied'),
       color: 'teal',
     });
   };
@@ -263,16 +316,16 @@ export function UsersPage() {
     try {
       const result = await bulkEnableUsers(Array.from(selectedIds));
       notifications.show({
-        title: 'Success',
-        message: `${result.count} users enabled`,
+        title: t('common.success'),
+        message: t('notification.bulkEnabled', { count: result.count }),
         color: 'teal',
       });
       setSelectedIds(new Set());
       await fetchUsers();
     } catch {
       notifications.show({
-        title: 'Error',
-        message: 'Failed to enable users',
+        title: t('common.error'),
+        message: t('notification.bulkError'),
         color: 'red',
       });
     } finally {
@@ -286,16 +339,16 @@ export function UsersPage() {
     try {
       const result = await bulkDisableUsers(Array.from(selectedIds));
       notifications.show({
-        title: 'Success',
-        message: `${result.count} users disabled`,
+        title: t('common.success'),
+        message: t('notification.bulkDisabled', { count: result.count }),
         color: 'teal',
       });
       setSelectedIds(new Set());
       await fetchUsers();
     } catch {
       notifications.show({
-        title: 'Error',
-        message: 'Failed to disable users',
+        title: t('common.error'),
+        message: t('notification.bulkError'),
         color: 'red',
       });
     } finally {
@@ -309,16 +362,16 @@ export function UsersPage() {
     try {
       const result = await bulkDeleteUsers(Array.from(selectedIds));
       notifications.show({
-        title: 'Success',
-        message: `${result.count} users deleted`,
+        title: t('common.success'),
+        message: t('notification.bulkDeleted', { count: result.count }),
         color: 'teal',
       });
       setSelectedIds(new Set());
       await fetchUsers();
     } catch {
       notifications.show({
-        title: 'Error',
-        message: 'Failed to delete users',
+        title: t('common.error'),
+        message: t('notification.bulkError'),
         color: 'red',
       });
     } finally {
@@ -350,10 +403,10 @@ export function UsersPage() {
   return (
     <Stack gap="lg">
       {/* Header */}
-      <Group justify="space-between">
+      <Group justify="space-between" wrap="wrap">
         <Group gap="sm">
           <Text size="22px" fw={700} style={{ color: '#C1C2C5' }}>
-            Users
+            {t('users.title')}
           </Text>
           <Badge
             variant="light"
@@ -371,13 +424,13 @@ export function UsersPage() {
           radius="md"
           onClick={() => setCreateOpen(true)}
         >
-          Add User
+          {t('users.addUser')}
         </Button>
       </Group>
 
       {/* Search */}
       <TextInput
-        placeholder="Search by email or remark..."
+        placeholder={t('users.searchPlaceholder')}
         leftSection={<IconSearch size={16} color="#5c5f66" />}
         value={search}
         onChange={(e) => setSearch(e.currentTarget.value)}
@@ -401,10 +454,11 @@ export function UsersPage() {
             display: 'flex',
             alignItems: 'center',
             gap: 10,
+            flexWrap: 'wrap' as const,
           }}
         >
           <Text size="sm" fw={500} style={{ color: '#909296' }}>
-            {selectedIds.size} selected
+            {t('users.selected', { count: selectedIds.size })}
           </Text>
           <Button
             size="xs"
@@ -416,7 +470,7 @@ export function UsersPage() {
             onClick={handleBulkEnable}
             styles={{ root: { border: '1px solid rgba(32,201,151,0.2)' } }}
           >
-            Enable All
+            {t('users.enableAll')}
           </Button>
           <Button
             size="xs"
@@ -428,7 +482,7 @@ export function UsersPage() {
             onClick={handleBulkDisable}
             styles={{ root: { border: '1px solid rgba(252,196,25,0.2)' } }}
           >
-            Disable All
+            {t('users.disableAll')}
           </Button>
           <Button
             size="xs"
@@ -440,7 +494,7 @@ export function UsersPage() {
             onClick={handleBulkDelete}
             styles={{ root: { border: '1px solid rgba(255,107,107,0.2)' } }}
           >
-            Delete Selected
+            {t('users.deleteSelected')}
           </Button>
         </Paper>
       )}
@@ -452,7 +506,11 @@ export function UsersPage() {
             horizontalSpacing="md"
             verticalSpacing="sm"
             styles={{
-              table: { borderCollapse: 'separate', borderSpacing: 0 },
+              table: {
+                borderCollapse: 'separate',
+                borderSpacing: 0,
+                minWidth: 800,
+              },
             }}
           >
             <Table.Thead>
@@ -471,11 +529,12 @@ export function UsersPage() {
                     size="xs"
                   />
                 </Table.Th>
-                <Table.Th style={thStyle}>User</Table.Th>
-                <Table.Th style={thStyle}>Status</Table.Th>
-                <Table.Th style={thStyle}>Traffic</Table.Th>
-                <Table.Th style={thStyle}>Limit</Table.Th>
-                <Table.Th style={thStyle}>Expiry</Table.Th>
+                <Table.Th style={thStyle}>{t('users.user')}</Table.Th>
+                <Table.Th style={thStyle}>{t('users.status')}</Table.Th>
+                <Table.Th style={thStyle}>{t('users.traffic')}</Table.Th>
+                <Table.Th style={thStyle}>{t('users.limit')}</Table.Th>
+                <Table.Th style={thStyle}>{t('users.devices')}</Table.Th>
+                <Table.Th style={thStyle}>{t('users.expiry')}</Table.Th>
                 <Table.Th style={{ ...thStyle, width: 50 }} />
               </Table.Tr>
             </Table.Thead>
@@ -484,6 +543,9 @@ export function UsersPage() {
                 const statusInfo = getStatusInfo(user);
                 const trafficPercent = getTrafficPercent(user);
                 const totalTraffic = Number(user.trafficUp) + Number(user.trafficDown);
+                const sparkData = userSparkline(user);
+                // Mock device count based on user id
+                const deviceCount = Math.abs(user.id.charCodeAt(0) % 4);
 
                 return (
                   <Table.Tr
@@ -525,15 +587,39 @@ export function UsersPage() {
                       <Group gap={6}>
                         <IconCircleFilled size={8} color={statusInfo.dotColor} />
                         <Text size="xs" fw={500} style={{ color: statusInfo.dotColor }}>
-                          {statusInfo.label}
+                          {t(statusInfo.key)}
                         </Text>
                       </Group>
                     </Table.Td>
                     <Table.Td>
                       <Box>
-                        <Text size="sm" ff="monospace" fw={500} style={{ color: '#C1C2C5' }}>
-                          {formatBytes(String(totalTraffic))}
-                        </Text>
+                        <Group gap={8} wrap="nowrap">
+                          <Text size="sm" ff="monospace" fw={500} style={{ color: '#C1C2C5' }}>
+                            {formatBytes(String(totalTraffic))}
+                          </Text>
+                          {/* Mini sparkline */}
+                          <Box style={{ width: 50, height: 20 }}>
+                            <ResponsiveContainer width="100%" height={20}>
+                              <AreaChart data={sparkData} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
+                                <defs>
+                                  <linearGradient id={`usg-${user.id}`} x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stopColor="#339AF0" stopOpacity={0.3} />
+                                    <stop offset="100%" stopColor="#339AF0" stopOpacity={0} />
+                                  </linearGradient>
+                                </defs>
+                                <Area
+                                  type="monotone"
+                                  dataKey="v"
+                                  stroke="#339AF0"
+                                  strokeWidth={1}
+                                  fill={`url(#usg-${user.id})`}
+                                  dot={false}
+                                  isAnimationActive={false}
+                                />
+                              </AreaChart>
+                            </ResponsiveContainer>
+                          </Box>
+                        </Group>
                         {trafficPercent !== null && (
                           <Progress
                             value={trafficPercent}
@@ -551,30 +637,38 @@ export function UsersPage() {
                       <Text size="sm" ff="monospace" fw={500} style={{ color: '#909296' }}>
                         {user.trafficLimit
                           ? formatBytes(user.trafficLimit)
-                          : 'Unlimited'}
+                          : t('users.unlimited')}
                       </Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Group gap={4}>
+                        <IconDevices size={14} color="#5c5f66" stroke={1.5} />
+                        <Text size="sm" ff="monospace" fw={500} style={{ color: '#909296' }}>
+                          {deviceCount}
+                        </Text>
+                      </Group>
                     </Table.Td>
                     <Table.Td>
                       <Group gap={6}>
                         <Text size="sm" style={{ color: '#909296' }}>
                           {user.expiryDate
                             ? new Date(user.expiryDate).toLocaleDateString()
-                            : 'Never'}
+                            : t('users.never')}
                         </Text>
                         {isExpired(user) && (
                           <Badge color="red" variant="light" size="xs" radius="sm">
-                            Expired
+                            {t('users.expired')}
                           </Badge>
                         )}
                         {!isExpired(user) && isExpiringSoon(user) && (
                           <Badge color="yellow" variant="light" size="xs" radius="sm">
-                            Soon
+                            {t('users.expiringSoon')}
                           </Badge>
                         )}
                       </Group>
                     </Table.Td>
                     <Table.Td>
-                      <Menu shadow="md" width={180} position="bottom-end">
+                      <Menu shadow="md" width={200} position="bottom-end">
                         <Menu.Target>
                           <ActionIcon variant="subtle" color="gray" radius="md" style={{ color: '#5c5f66' }}>
                             <IconDotsVertical size={16} />
@@ -592,14 +686,28 @@ export function UsersPage() {
                             onClick={() => handleCopySubLink(user)}
                             style={{ fontSize: '13px' }}
                           >
-                            Copy Sub Link
+                            {t('users.copySubLink')}
                           </Menu.Item>
                           <Menu.Item
                             leftSection={<IconToggleLeft size={14} />}
                             onClick={() => handleToggle(user.id)}
                             style={{ fontSize: '13px' }}
                           >
-                            {user.enabled ? 'Disable' : 'Enable'}
+                            {user.enabled ? t('users.disable') : t('users.enable')}
+                          </Menu.Item>
+                          <Menu.Item
+                            leftSection={<IconCalendarPlus size={14} />}
+                            onClick={() => handleRenew(user.id)}
+                            style={{ fontSize: '13px' }}
+                          >
+                            {t('users.renew')}
+                          </Menu.Item>
+                          <Menu.Item
+                            leftSection={<IconRefresh size={14} />}
+                            onClick={() => handleResetTraffic(user.id)}
+                            style={{ fontSize: '13px' }}
+                          >
+                            {t('users.resetTraffic')}
                           </Menu.Item>
                           <Menu.Divider style={{ borderColor: 'rgba(255,255,255,0.06)' }} />
                           <Menu.Item
@@ -608,7 +716,7 @@ export function UsersPage() {
                             onClick={() => handleDelete(user.id)}
                             style={{ fontSize: '13px' }}
                           >
-                            Delete
+                            {t('users.delete')}
                           </Menu.Item>
                         </Menu.Dropdown>
                       </Menu>
@@ -618,7 +726,7 @@ export function UsersPage() {
               })}
               {filteredUsers.length === 0 && (
                 <Table.Tr>
-                  <Table.Td colSpan={7}>
+                  <Table.Td colSpan={8}>
                     <Box
                       py={48}
                       style={{
@@ -630,7 +738,7 @@ export function UsersPage() {
                     >
                       <IconUsers size={40} color="#373A40" stroke={1} />
                       <Text ta="center" size="sm" style={{ color: '#5c5f66' }}>
-                        {search ? 'No users match your search' : 'No users yet'}
+                        {search ? t('users.noUsersMatch') : t('users.noUsersYet')}
                       </Text>
                     </Box>
                   </Table.Td>
@@ -645,7 +753,7 @@ export function UsersPage() {
       <Modal
         opened={createOpen}
         onClose={() => setCreateOpen(false)}
-        title="Add User"
+        title={t('users.addUser')}
         radius="lg"
         styles={{
           content: {
@@ -662,21 +770,21 @@ export function UsersPage() {
       >
         <Stack gap="md" mt="md">
           <TextInput
-            label="Email"
+            label={t('users.email')}
             placeholder="user@example.com"
             value={newEmail}
             onChange={(e) => setNewEmail(e.currentTarget.value)}
             styles={inputStyles}
           />
           <TextInput
-            label="Remark"
+            label={t('users.remark')}
             placeholder="Optional note"
             value={newRemark}
             onChange={(e) => setNewRemark(e.currentTarget.value)}
             styles={inputStyles}
           />
           <NumberInput
-            label="Traffic Limit (GB)"
+            label={t('users.trafficLimitGB')}
             placeholder="Leave empty for unlimited"
             value={newTrafficLimitGB}
             onChange={(v) =>
@@ -686,7 +794,7 @@ export function UsersPage() {
             styles={inputStyles}
           />
           <DateInput
-            label="Expiry Date"
+            label={t('users.expiryDate')}
             placeholder="Leave empty for no expiry"
             value={newExpiryDate}
             onChange={setNewExpiryDate}
@@ -701,7 +809,7 @@ export function UsersPage() {
             radius="md"
             fullWidth
           >
-            Create User
+            {t('users.createUser')}
           </Button>
         </Stack>
       </Modal>

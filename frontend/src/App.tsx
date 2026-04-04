@@ -13,6 +13,9 @@ import { SessionsPage } from './pages/Sessions';
 import { ConfigEditorPage } from './pages/ConfigEditor';
 import { MigrationPage } from './pages/Migration';
 import { SquadsPage } from './pages/Squads';
+import { ConfigProfilesPage } from './pages/ConfigProfiles';
+import { DevicesPage } from './pages/Devices';
+import { TrafficHistoryPage } from './pages/TrafficHistory';
 
 export function App() {
   return (
@@ -37,6 +40,9 @@ export function App() {
           <Route path="/sessions" element={<SessionsPage />} />
           <Route path="/config-editor" element={<ConfigEditorPage />} />
           <Route path="/migration" element={<MigrationPage />} />
+          <Route path="/config-profiles" element={<ConfigProfilesPage />} />
+          <Route path="/devices" element={<DevicesPage />} />
+          <Route path="/traffic-history" element={<TrafficHistoryPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

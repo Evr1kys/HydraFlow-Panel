@@ -7,6 +7,7 @@ import {
   Box,
   Tooltip,
   Badge,
+  SegmentedControl,
 } from '@mantine/core';
 import {
   IconLayoutDashboard,
@@ -24,14 +25,18 @@ import {
   IconPlugConnected,
   IconCode,
   IconDatabaseImport,
+  IconChartBar,
+  IconFileCode,
+  IconDevices,
 } from '@tabler/icons-react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from './AuthProvider';
 
 interface NavSection {
-  label: string;
+  labelKey: string;
   color: string;
   items: {
-    label: string;
+    labelKey: string;
     icon: typeof IconLayoutDashboard;
     path: string;
   }[];
@@ -39,45 +44,48 @@ interface NavSection {
 
 const navSections: NavSection[] = [
   {
-    label: 'OVERVIEW',
+    labelKey: 'sidebar.overview',
     color: '#20C997',
     items: [
-      { label: 'Dashboard', icon: IconLayoutDashboard, path: '/' },
+      { labelKey: 'sidebar.dashboard', icon: IconLayoutDashboard, path: '/' },
+      { labelKey: 'sidebar.trafficHistory', icon: IconChartBar, path: '/traffic-history' },
     ],
   },
   {
-    label: 'MANAGEMENT',
+    labelKey: 'sidebar.management',
     color: '#339AF0',
     items: [
-      { label: 'Users', icon: IconUsers, path: '/users' },
-      { label: 'Nodes', icon: IconServer, path: '/nodes' },
-      { label: 'Squads', icon: IconUsersGroup, path: '/squads' },
+      { labelKey: 'sidebar.users', icon: IconUsers, path: '/users' },
+      { labelKey: 'sidebar.nodes', icon: IconServer, path: '/nodes' },
+      { labelKey: 'sidebar.squads', icon: IconUsersGroup, path: '/squads' },
+      { labelKey: 'sidebar.configProfiles', icon: IconFileCode, path: '/config-profiles' },
     ],
   },
   {
-    label: 'INTELLIGENCE',
+    labelKey: 'sidebar.intelligence',
     color: '#845EF7',
     items: [
-      { label: 'ISP Map', icon: IconRadar, path: '/intelligence' },
-      { label: 'Protocol Health', icon: IconActivity, path: '/?section=health' },
+      { labelKey: 'sidebar.ispMap', icon: IconRadar, path: '/intelligence' },
+      { labelKey: 'sidebar.protocolHealth', icon: IconActivity, path: '/?section=health' },
     ],
   },
   {
-    label: 'TOOLS',
+    labelKey: 'sidebar.tools',
     color: '#FF922B',
     items: [
-      { label: 'Billing', icon: IconReceipt, path: '/billing' },
-      { label: 'Plugins', icon: IconPuzzle, path: '/plugins' },
-      { label: 'Sessions', icon: IconPlugConnected, path: '/sessions' },
+      { labelKey: 'sidebar.devices', icon: IconDevices, path: '/devices' },
+      { labelKey: 'sidebar.billing', icon: IconReceipt, path: '/billing' },
+      { labelKey: 'sidebar.plugins', icon: IconPuzzle, path: '/plugins' },
+      { labelKey: 'sidebar.sessions', icon: IconPlugConnected, path: '/sessions' },
     ],
   },
   {
-    label: 'SETTINGS',
+    labelKey: 'sidebar.settings',
     color: '#FCC419',
     items: [
-      { label: 'Configuration', icon: IconSettings, path: '/settings' },
-      { label: 'Config Editor', icon: IconCode, path: '/config-editor' },
-      { label: 'Migration', icon: IconDatabaseImport, path: '/migration' },
+      { labelKey: 'sidebar.configuration', icon: IconSettings, path: '/settings' },
+      { labelKey: 'sidebar.configEditor', icon: IconCode, path: '/config-editor' },
+      { labelKey: 'sidebar.migration', icon: IconDatabaseImport, path: '/migration' },
     ],
   },
 ];
@@ -86,6 +94,7 @@ export function AppShellLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { logout } = useAuth();
+  const { t, i18n } = useTranslation();
 
   const handleLogout = () => {
     logout();
@@ -95,6 +104,11 @@ export function AppShellLayout() {
   const isActive = (path: string) => {
     if (path.includes('?')) return false;
     return location.pathname === path;
+  };
+
+  const handleLanguageChange = (lang: string) => {
+    i18n.changeLanguage(lang);
+    localStorage.setItem('hydraflow_lang', lang);
   };
 
   return (
@@ -145,10 +159,10 @@ export function AppShellLayout() {
           </Group>
         </MantineAppShell.Section>
 
-        {/* Navigation sections - tighter spacing */}
+        {/* Navigation sections */}
         <MantineAppShell.Section grow style={{ overflowY: 'auto' }}>
           {navSections.map((section) => (
-            <Box key={section.label} mb={12}>
+            <Box key={section.labelKey} mb={12}>
               <Box
                 px={12}
                 py={2}
@@ -166,7 +180,7 @@ export function AppShellLayout() {
                     textTransform: 'uppercase',
                   }}
                 >
-                  {section.label}
+                  {t(section.labelKey)}
                 </Text>
               </Box>
 
@@ -205,7 +219,7 @@ export function AppShellLayout() {
                   >
                     <item.icon size={18} stroke={1.5} />
                     <Text size="sm" fw={active ? 600 : 400}>
-                      {item.label}
+                      {t(item.labelKey)}
                     </Text>
                   </UnstyledButton>
                 );
@@ -222,6 +236,35 @@ export function AppShellLayout() {
               paddingTop: 12,
             }}
           >
+            {/* Language switcher */}
+            <Box mb={8} px={4}>
+              <SegmentedControl
+                value={i18n.language}
+                onChange={handleLanguageChange}
+                data={[
+                  { label: 'EN', value: 'en' },
+                  { label: 'RU', value: 'ru' },
+                  { label: 'ZH', value: 'zh' },
+                ]}
+                size="xs"
+                fullWidth
+                color="teal"
+                radius="md"
+                styles={{
+                  root: {
+                    backgroundColor: '#161B23',
+                    border: '1px solid rgba(255,255,255,0.06)',
+                  },
+                  label: {
+                    color: '#909296',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    padding: '4px 0',
+                  },
+                }}
+              />
+            </Box>
+
             <UnstyledButton
               onClick={handleLogout}
               style={{
@@ -245,7 +288,7 @@ export function AppShellLayout() {
               }}
             >
               <IconLogout size={18} stroke={1.5} />
-              <Text size="sm">Logout</Text>
+              <Text size="sm">{t('sidebar.logout')}</Text>
             </UnstyledButton>
           </Box>
         </MantineAppShell.Section>

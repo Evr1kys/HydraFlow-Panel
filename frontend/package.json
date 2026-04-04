@@ -19,8 +19,11 @@
     "@tabler/icons-react": "^2.47.0",
     "axios": "^1.6.5",
     "dayjs": "^1.11.10",
+    "i18next": "^26.0.3",
+    "monaco-editor": "^0.55.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-i18next": "^17.0.2",
     "react-router-dom": "^6.21.3",
     "recharts": "^3.8.1"
   },

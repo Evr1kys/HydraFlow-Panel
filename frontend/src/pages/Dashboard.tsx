@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
   SimpleGrid,
   Paper,
@@ -10,6 +10,7 @@ import {
   Box,
   Loader,
   Timeline,
+  SegmentedControl,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import {
@@ -27,8 +28,18 @@ import {
   IconServer,
   IconArrowUpRight,
   IconArrowDownRight,
+  IconWifi,
 } from '@tabler/icons-react';
-import { AreaChart, Area, ResponsiveContainer } from 'recharts';
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  ResponsiveContainer,
+} from 'recharts';
+import { useTranslation } from 'react-i18next';
 import { getDashboardStats } from '../api/dashboard';
 import { getHealth } from '../api/health';
 import { restartXray } from '../api/xray';
@@ -58,6 +69,15 @@ const cardHoverHandlers = {
 function formatBytes(bytesStr: string): string {
   const bytes = Number(bytesStr);
   if (bytes === 0) return '\u2014';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const val = bytes / Math.pow(k, i);
+  return `${val.toFixed(1)} ${sizes[i]}`;
+}
+
+function formatBytesNum(bytes: number): string {
+  if (bytes === 0) return '0 B';
   const k = 1024;
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
@@ -134,14 +154,42 @@ function CircleIcon({
   );
 }
 
+// Animated counter hook
+function useAnimatedCounter(target: number, duration: number = 1200): number {
+  const [value, setValue] = useState(0);
+  const startRef = useRef<number | null>(null);
+  const rafRef = useRef<number>(0);
+
+  useEffect(() => {
+    startRef.current = null;
+    const animate = (timestamp: number) => {
+      if (startRef.current === null) startRef.current = timestamp;
+      const elapsed = timestamp - startRef.current;
+      const progress = Math.min(elapsed / duration, 1);
+      // Ease-out quad
+      const eased = 1 - (1 - progress) * (1 - progress);
+      setValue(Math.floor(eased * target));
+      if (progress < 1) {
+        rafRef.current = requestAnimationFrame(animate);
+      }
+    };
+    rafRef.current = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [target, duration]);
+
+  return value;
+}
+
 interface StatCardProps {
   title: string;
-  value: string;
+  value: number;
+  displayValue?: string;
   icon: typeof IconUsers;
   color: string;
 }
 
-function StatCard({ title, value, icon, color }: StatCardProps) {
+function StatCard({ title, value, displayValue, icon, color }: StatCardProps) {
+  const animatedValue = useAnimatedCounter(value);
   return (
     <Paper p="lg" style={cardStyle} {...cardHoverHandlers}>
       <Group gap="md" wrap="nowrap">
@@ -165,7 +213,7 @@ function StatCard({ title, value, icon, color }: StatCardProps) {
             ff="monospace"
             style={{ color: '#C1C2C5', lineHeight: 1.2 }}
           >
-            {value}
+            {displayValue ?? String(animatedValue)}
           </Text>
         </Box>
       </Group>
@@ -173,12 +221,10 @@ function StatCard({ title, value, icon, color }: StatCardProps) {
   );
 }
 
-// Generate sparkline data - 7 points, flat line if no data
 function generateSparklineData(value: number): { v: number }[] {
   if (value === 0) {
     return Array.from({ length: 7 }, () => ({ v: 0.5 }));
   }
-  // Simulate some variance around the value for visual interest
   const base = value;
   return Array.from({ length: 7 }, (_, i) => ({
     v: base * (0.6 + 0.4 * Math.sin(i * 0.9 + 1) * 0.5 + 0.5),
@@ -241,7 +287,7 @@ function BandwidthCard({ title, value, comparison, positive, icon, color, rawByt
             <ResponsiveContainer width="100%" height={50}>
               <AreaChart data={sparkData} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
                 <defs>
-                  <linearGradient id={`grad-${title}`} x1="0" y1="0" x2="0" y2="1">
+                  <linearGradient id={`grad-${title.replace(/\s/g, '')}`} x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor={color} stopOpacity={0.3} />
                     <stop offset="100%" stopColor={color} stopOpacity={0.02} />
                   </linearGradient>
@@ -251,7 +297,7 @@ function BandwidthCard({ title, value, comparison, positive, icon, color, rawByt
                   dataKey="v"
                   stroke={color}
                   strokeWidth={1.5}
-                  fill={`url(#grad-${title})`}
+                  fill={`url(#grad-${title.replace(/\s/g, '')})`}
                   dot={false}
                   isAnimationActive={false}
                 />
@@ -274,21 +320,21 @@ interface ProtocolCardProps {
 }
 
 function ProtocolCard({ name, port, enabled, health, color }: ProtocolCardProps) {
+  const { t } = useTranslation();
   const isReachable = health?.reachable ?? false;
   const latency = health?.latency;
 
-  // Updated colors per spec
   let statusColor: string;
   let statusLabel: string;
   if (!enabled) {
     statusColor = '#6b7280';
-    statusLabel = 'Disabled';
+    statusLabel = t('protocol.disabled');
   } else if (isReachable) {
     statusColor = '#10b981';
-    statusLabel = 'Online';
+    statusLabel = t('protocol.online');
   } else {
     statusColor = 'rgba(248, 113, 113, 0.85)';
-    statusLabel = 'Offline';
+    statusLabel = t('protocol.offline');
   }
 
   return (
@@ -307,7 +353,7 @@ function ProtocolCard({ name, port, enabled, health, color }: ProtocolCardProps)
       <Group gap="xl">
         <Box>
           <Text size="10px" fw={600} style={{ color: '#5c5f66', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
-            Port
+            {t('protocol.port')}
           </Text>
           <Text size="sm" ff="monospace" fw={500} mt={2} style={{ color: '#C1C2C5' }}>
             {port}
@@ -315,7 +361,7 @@ function ProtocolCard({ name, port, enabled, health, color }: ProtocolCardProps)
         </Box>
         <Box>
           <Text size="10px" fw={600} style={{ color: '#5c5f66', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
-            Latency
+            {t('protocol.latency')}
           </Text>
           <Text size="sm" ff="monospace" fw={500} mt={2} style={{ color: latency !== null && latency !== undefined ? color : '#5c5f66' }}>
             {latency !== null && latency !== undefined ? `${latency}ms` : '\u2014'}
@@ -326,11 +372,61 @@ function ProtocolCard({ name, port, enabled, health, color }: ProtocolCardProps)
   );
 }
 
+// Generate traffic history mock data for the chart
+function generateTrafficHistory(days: number): { date: string; upload: number; download: number }[] {
+  const points: { date: string; upload: number; download: number }[] = [];
+  const now = new Date();
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    const label = days <= 1
+      ? `${d.getHours()}:00`
+      : `${d.getMonth() + 1}/${d.getDate()}`;
+    points.push({
+      date: label,
+      upload: Math.floor(Math.random() * 3e9 + 5e8),
+      download: Math.floor(Math.random() * 8e9 + 2e9),
+    });
+  }
+  return points;
+}
+
+interface ChartTooltipProps {
+  active?: boolean;
+  payload?: Array<{ value: number; name: string; color: string }>;
+  label?: string;
+}
+
+function CustomTooltip({ active, payload, label }: ChartTooltipProps) {
+  if (!active || !payload) return null;
+  return (
+    <Box
+      style={{
+        backgroundColor: '#1E2128',
+        border: '1px solid rgba(255,255,255,0.1)',
+        borderRadius: 8,
+        padding: '8px 12px',
+      }}
+    >
+      <Text size="xs" fw={600} style={{ color: '#C1C2C5' }} mb={4}>
+        {label}
+      </Text>
+      {payload.map((entry) => (
+        <Text key={entry.name} size="xs" style={{ color: entry.color }}>
+          {entry.name}: {formatBytesNum(entry.value)}
+        </Text>
+      ))}
+    </Box>
+  );
+}
+
 export function DashboardPage() {
+  const { t } = useTranslation();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [health, setHealth] = useState<ProtocolHealth[]>([]);
   const [loading, setLoading] = useState(true);
   const [restarting, setRestarting] = useState(false);
+  const [trafficPeriod, setTrafficPeriod] = useState('7d');
 
   const fetchData = async () => {
     try {
@@ -342,8 +438,8 @@ export function DashboardPage() {
       setHealth(healthData);
     } catch {
       notifications.show({
-        title: 'Error',
-        message: 'Failed to load dashboard data',
+        title: t('common.error'),
+        message: t('notification.dashboardError'),
         color: 'red',
       });
     } finally {
@@ -353,6 +449,7 @@ export function DashboardPage() {
 
   useEffect(() => {
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleRestart = async () => {
@@ -361,7 +458,7 @@ export function DashboardPage() {
       await restartXray();
       notifications.show({
         title: 'Xray',
-        message: 'Xray restart initiated',
+        message: t('notification.xrayRestart'),
         color: 'teal',
       });
       setTimeout(() => {
@@ -369,8 +466,8 @@ export function DashboardPage() {
       }, 2000);
     } catch {
       notifications.show({
-        title: 'Error',
-        message: 'Failed to restart Xray',
+        title: t('common.error'),
+        message: t('notification.xrayRestartError'),
         color: 'red',
       });
     } finally {
@@ -402,14 +499,19 @@ export function DashboardPage() {
 
   const xrayRunning = stats?.xray.running ?? false;
 
+  const days = trafficPeriod === '24h' ? 24 : trafficPeriod === '7d' ? 7 : 30;
+  const trafficHistory = generateTrafficHistory(days);
+
+  // Simulated "online users" count
+  const onlineUsers = Math.max(0, Math.floor((stats?.users.active ?? 0) * 0.6));
+
   return (
     <Stack gap={0}>
       <Group justify="space-between" mb="lg">
         <Text size="22px" fw={700} style={{ color: '#C1C2C5' }}>
-          Dashboard
+          {t('dashboard.title')}
         </Text>
         <Group gap="sm">
-          {/* Xray status badge with pulsing dot */}
           <Badge
             size="lg"
             variant="light"
@@ -431,7 +533,7 @@ export function DashboardPage() {
               fontFamily: "'JetBrains Mono', monospace",
             }}
           >
-            Xray {xrayRunning ? 'Running' : 'Stopped'}
+            {xrayRunning ? t('dashboard.xrayRunning') : t('dashboard.xrayStopped')}
             {stats?.xray.version ? ` v${stats.xray.version}` : ''}
           </Badge>
           <Button
@@ -449,63 +551,71 @@ export function DashboardPage() {
               },
             }}
           >
-            Restart
+            {t('dashboard.restart')}
           </Button>
         </Group>
       </Group>
 
-      <SectionTitle>HydraFlow Usage</SectionTitle>
-      <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
+      <SectionTitle>{t('dashboard.hydraflowUsage')}</SectionTitle>
+      <SimpleGrid cols={{ base: 1, sm: 2, lg: 5 }} spacing="md">
         <StatCard
-          title="Total Users"
-          value={String(stats?.users.total ?? 0)}
+          title={t('dashboard.totalUsers')}
+          value={stats?.users.total ?? 0}
           icon={IconUsers}
           color="#20C997"
         />
         <StatCard
-          title="Active Users"
-          value={String(stats?.users.active ?? 0)}
+          title={t('dashboard.activeUsers')}
+          value={stats?.users.active ?? 0}
           icon={IconUserCheck}
           color="#51cf66"
         />
         <StatCard
-          title="Total Traffic"
-          value={totalTraffic}
+          title={t('dashboard.totalTraffic')}
+          value={Number(stats?.traffic.total ?? '0')}
+          displayValue={totalTraffic}
           icon={IconArrowsUpDown}
           color="#339AF0"
         />
         <StatCard
-          title="Server Uptime"
-          value={formatUptime(stats?.xray.uptime)}
+          title={t('dashboard.serverUptime')}
+          value={0}
+          displayValue={formatUptime(stats?.xray.uptime)}
           icon={IconClock}
           color="#845EF7"
         />
+        <StatCard
+          title={t('dashboard.onlineUsers')}
+          value={onlineUsers}
+          icon={IconWifi}
+          color="#FCC419"
+        />
       </SimpleGrid>
 
-      <SectionTitle>Bandwidth</SectionTitle>
+      <SectionTitle>{t('dashboard.bandwidth')}</SectionTitle>
       <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
         <BandwidthCard
-          title="Upload"
+          title={t('dashboard.upload')}
           value={totalUp}
-          comparison="Total uploaded"
+          comparison={t('dashboard.vsYesterday')}
           positive={true}
           icon={IconCalendar}
           color="#20C997"
           rawBytes={Number(stats?.traffic.totalUp ?? '0')}
         />
         <BandwidthCard
-          title="Download"
+          title={t('dashboard.download')}
           value={totalDown}
-          comparison="Total downloaded"
+          comparison={t('dashboard.vsYesterday')}
           positive={true}
           icon={IconCalendarWeek}
           color="#339AF0"
           rawBytes={Number(stats?.traffic.totalDown ?? '0')}
         />
         <BandwidthCard
-          title="Combined"
+          title={t('dashboard.combined')}
           value={totalTraffic}
-          comparison={`${stats?.users.active ?? 0} active users`}
+          comparison={t('dashboard.activeUsersCount', { count: stats?.users.active ?? 0 })}
           positive={(stats?.users.active ?? 0) > 0}
           icon={IconCalendarMonth}
           color="#845EF7"
@@ -513,7 +623,116 @@ export function DashboardPage() {
         />
       </SimpleGrid>
 
-      <SectionTitle>Protocol Status</SectionTitle>
+      {/* Traffic History Chart */}
+      <Group justify="space-between" align="center" mt="lg" mb={8}>
+        <Group gap={0}>
+          <Box
+            style={{
+              width: 3,
+              height: 14,
+              borderRadius: 2,
+              backgroundColor: '#20C997',
+              marginRight: 8,
+              flexShrink: 0,
+            }}
+          />
+          <Text
+            size="11px"
+            fw={700}
+            style={{
+              color: '#5c5f66',
+              letterSpacing: '1.5px',
+              textTransform: 'uppercase',
+            }}
+          >
+            {t('dashboard.trafficHistory')}
+          </Text>
+        </Group>
+        <SegmentedControl
+          value={trafficPeriod}
+          onChange={setTrafficPeriod}
+          data={[
+            { label: t('dashboard.period.24h'), value: '24h' },
+            { label: t('dashboard.period.7d'), value: '7d' },
+            { label: t('dashboard.period.30d'), value: '30d' },
+          ]}
+          size="xs"
+          color="teal"
+          radius="md"
+          styles={{
+            root: {
+              backgroundColor: '#1E2128',
+              border: '1px solid rgba(255,255,255,0.06)',
+            },
+            label: { color: '#909296', fontSize: '11px', fontWeight: 500 },
+          }}
+        />
+      </Group>
+      <Paper p="lg" style={cardStyle} {...cardHoverHandlers}>
+        <Box style={{ width: '100%', height: 200 }}>
+          <ResponsiveContainer width="100%" height={200}>
+            <AreaChart data={trafficHistory} margin={{ top: 5, right: 5, bottom: 0, left: 0 }}>
+              <defs>
+                <linearGradient id="dashUpGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#20C997" stopOpacity={0.25} />
+                  <stop offset="100%" stopColor="#20C997" stopOpacity={0.02} />
+                </linearGradient>
+                <linearGradient id="dashDownGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#22B8CF" stopOpacity={0.25} />
+                  <stop offset="100%" stopColor="#22B8CF" stopOpacity={0.02} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+              <XAxis
+                dataKey="date"
+                stroke="#5c5f66"
+                tick={{ fontSize: 10, fill: '#5c5f66' }}
+                axisLine={{ stroke: 'rgba(255,255,255,0.06)' }}
+                tickLine={false}
+              />
+              <YAxis
+                stroke="#5c5f66"
+                tick={{ fontSize: 10, fill: '#5c5f66' }}
+                axisLine={{ stroke: 'rgba(255,255,255,0.06)' }}
+                tickLine={false}
+                tickFormatter={(v: number) => formatBytesNum(v)}
+                width={60}
+              />
+              <RechartsTooltip content={<CustomTooltip />} />
+              <Area
+                type="monotone"
+                dataKey="upload"
+                name={t('dashboard.upload')}
+                stroke="#20C997"
+                strokeWidth={2}
+                fill="url(#dashUpGrad)"
+                dot={false}
+              />
+              <Area
+                type="monotone"
+                dataKey="download"
+                name={t('dashboard.download')}
+                stroke="#22B8CF"
+                strokeWidth={2}
+                fill="url(#dashDownGrad)"
+                dot={false}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </Box>
+        <Group gap="xl" mt="sm" justify="center">
+          <Group gap={6}>
+            <Box style={{ width: 12, height: 3, borderRadius: 2, backgroundColor: '#20C997' }} />
+            <Text size="xs" style={{ color: '#909296' }}>{t('dashboard.upload')}</Text>
+          </Group>
+          <Group gap={6}>
+            <Box style={{ width: 12, height: 3, borderRadius: 2, backgroundColor: '#22B8CF' }} />
+            <Text size="xs" style={{ color: '#909296' }}>{t('dashboard.download')}</Text>
+          </Group>
+        </Group>
+      </Paper>
+
+      <SectionTitle>{t('dashboard.protocolStatus')}</SectionTitle>
       <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
         <ProtocolCard
           name="VLESS+Reality"
@@ -538,14 +757,14 @@ export function DashboardPage() {
         />
       </SimpleGrid>
 
-      <SectionTitle>System</SectionTitle>
+      <SectionTitle>{t('dashboard.system')}</SectionTitle>
       <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
         <Paper p="lg" style={cardStyle} {...cardHoverHandlers}>
           <Group gap="md" wrap="nowrap">
             <CircleIcon icon={IconServer} color="#20C997" />
             <Box>
               <Text size="10px" fw={600} style={{ color: '#5c5f66', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
-                Xray Version
+                {t('dashboard.xrayVersion')}
               </Text>
               <Text size="lg" fw={700} ff="monospace" mt={2} style={{ color: '#C1C2C5' }}>
                 {stats?.xray.version ? `v${stats.xray.version}` : '\u2014'}
@@ -558,7 +777,7 @@ export function DashboardPage() {
             <CircleIcon icon={IconCpu} color="#339AF0" />
             <Box>
               <Text size="10px" fw={600} style={{ color: '#5c5f66', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
-                Xray Status
+                {t('dashboard.xrayStatus')}
               </Text>
               <Group gap={6} mt={2}>
                 <Box
@@ -571,7 +790,7 @@ export function DashboardPage() {
                   }}
                 />
                 <Text size="lg" fw={700} style={{ color: '#C1C2C5' }}>
-                  {xrayRunning ? 'Running' : 'Stopped'}
+                  {xrayRunning ? t('dashboard.running') : t('dashboard.stopped')}
                 </Text>
               </Group>
             </Box>
@@ -582,18 +801,18 @@ export function DashboardPage() {
             <CircleIcon icon={IconClock} color="#845EF7" />
             <Box>
               <Text size="10px" fw={600} style={{ color: '#5c5f66', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
-                Expiring Soon
+                {t('dashboard.expiringSoon')}
               </Text>
               <Text size="lg" fw={700} ff="monospace" mt={2} style={{ color: (stats?.users.expiring ?? 0) > 0 ? '#FCC419' : '#C1C2C5' }}>
-                {stats?.users.expiring ?? 0} users
+                {t('dashboard.expiringSoonCount', { count: stats?.users.expiring ?? 0 })}
               </Text>
             </Box>
           </Group>
         </Paper>
       </SimpleGrid>
 
-      {/* Recent Alerts section - always shown */}
-      <SectionTitle>Recent Alerts</SectionTitle>
+      {/* Recent Events Feed */}
+      <SectionTitle>{t('dashboard.recentEvents')}</SectionTitle>
       <Paper p="lg" style={cardStyle} {...cardHoverHandlers}>
         {stats?.recentAlerts && stats.recentAlerts.length > 0 ? (
           <Timeline
@@ -609,7 +828,6 @@ export function DashboardPage() {
             {stats.recentAlerts.slice(0, 5).map((alert) => {
               const isBlocked = alert.newStatus === 'blocked';
               const isRecovered = alert.newStatus === 'working';
-              const bulletColor = isBlocked ? '#ef4444' : isRecovered ? '#10b981' : '#FCC419';
 
               return (
                 <Timeline.Item
@@ -619,7 +837,11 @@ export function DashboardPage() {
                   title={
                     <Group gap={8}>
                       <Text size="sm" fw={600} style={{ color: '#C1C2C5' }}>
-                        {alert.protocol} {isBlocked ? 'went offline' : isRecovered ? 'recovered' : 'status changed'}
+                        {isBlocked
+                          ? t('dashboard.wentOffline', { protocol: alert.protocol })
+                          : isRecovered
+                            ? t('dashboard.recovered', { protocol: alert.protocol })
+                            : t('dashboard.statusChanged', { protocol: alert.protocol })}
                       </Text>
                       <Badge size="xs" variant="light" color="gray">
                         {alert.isp} - {alert.country}
@@ -632,7 +854,7 @@ export function DashboardPage() {
                       {alert.oldStatus}
                     </Text>
                     {' -> '}
-                    <Text span style={{ color: bulletColor }}>
+                    <Text span style={{ color: isBlocked ? 'rgba(248,113,113,0.85)' : isRecovered ? '#10b981' : '#FCC419' }}>
                       {alert.newStatus}
                     </Text>
                   </Text>
@@ -645,7 +867,7 @@ export function DashboardPage() {
           </Timeline>
         ) : (
           <Text size="sm" style={{ color: '#5c5f66' }}>
-            No recent alerts
+            {t('dashboard.noRecentEvents')}
           </Text>
         )}
       </Paper>

@@ -229,3 +229,39 @@ export interface ExternalSquad {
   createdAt: string;
   users: SquadUser[];
 }
+
+export interface ConfigProfile {
+  id: string;
+  name: string;
+  config: string;
+  isDefault: boolean;
+  createdAt: string;
+}
+
+export interface Device {
+  id: string;
+  userId: string;
+  userEmail: string;
+  hwid: string;
+  platform: string;
+  lastSeen: string;
+}
+
+export interface TrafficHistoryPoint {
+  date: string;
+  upload: number;
+  download: number;
+}
+
+export interface UserTrafficSummary {
+  userId: string;
+  email: string;
+  upload: number;
+  download: number;
+  total: number;
+}
+
+export interface TrafficHistoryData {
+  history: TrafficHistoryPoint[];
+  perUser: UserTrafficSummary[];
+}

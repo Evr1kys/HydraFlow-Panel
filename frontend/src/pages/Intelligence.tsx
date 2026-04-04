@@ -21,6 +21,7 @@ import {
   IconAlertTriangle,
   IconPlus,
 } from '@tabler/icons-react';
+import { useTranslation } from 'react-i18next';
 import {
   getIntelligence,
   getAlerts,
@@ -117,6 +118,7 @@ function SectionTitle({ children }: { children: string }) {
 }
 
 export function IntelligencePage() {
+  const { t } = useTranslation();
   const [country, setCountry] = useState('Russia');
   const [data, setData] = useState<IntelligenceEntry[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -137,14 +139,14 @@ export function IntelligencePage() {
       setAlerts(alertsData);
     } catch {
       notifications.show({
-        title: 'Error',
-        message: 'Failed to load intelligence data',
+        title: t('common.error'),
+        message: t('notification.intelligenceError'),
         color: 'red',
       });
     } finally {
       setLoading(false);
     }
-  }, [country]);
+  }, [country, t]);
 
   useEffect(() => {
     setLoading(true);
@@ -166,15 +168,15 @@ export function IntelligencePage() {
       setReportProtocol(null);
       setReportStatus(null);
       notifications.show({
-        title: 'Submitted',
-        message: 'ISP report submitted',
+        title: t('common.submitted'),
+        message: t('notification.reportSubmitted'),
         color: 'teal',
       });
       await fetchData();
     } catch {
       notifications.show({
-        title: 'Error',
-        message: 'Failed to submit report',
+        title: t('common.error'),
+        message: t('notification.reportError'),
         color: 'red',
       });
     } finally {
@@ -216,7 +218,7 @@ export function IntelligencePage() {
             <IconRadar size={20} color="#20C997" stroke={1.5} />
           </Box>
           <Text size="22px" fw={700} style={{ color: '#C1C2C5' }}>
-            ISP Intelligence
+            {t('intelligence.title')}
           </Text>
         </Group>
         <Button
@@ -226,7 +228,7 @@ export function IntelligencePage() {
           radius="md"
           onClick={() => setReportOpen(true)}
         >
-          Report
+          {t('intelligence.report')}
         </Button>
       </Group>
 
@@ -316,7 +318,7 @@ export function IntelligencePage() {
                     <Box py={48} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
                       <IconRadar size={40} color="#373A40" stroke={1} />
                       <Text ta="center" size="sm" style={{ color: '#5c5f66' }}>
-                        No intelligence data for {country}
+                        {t('intelligence.noData', { country })}
                       </Text>
                     </Box>
                   </Table.Td>
@@ -330,7 +332,7 @@ export function IntelligencePage() {
       {/* Recent Alerts */}
       {alerts.length > 0 && (
         <>
-          <SectionTitle>Recent Alerts</SectionTitle>
+          <SectionTitle>{t('intelligence.recentAlerts')}</SectionTitle>
           <Paper p="lg" style={cardStyle}>
             <Timeline
               active={alerts.length - 1}
@@ -381,7 +383,7 @@ export function IntelligencePage() {
       <Modal
         opened={reportOpen}
         onClose={() => setReportOpen(false)}
-        title="Submit ISP Report"
+        title={t('intelligence.submitReport')}
         radius="lg"
         styles={{
           content: {
@@ -398,7 +400,7 @@ export function IntelligencePage() {
       >
         <Stack gap="md" mt="md">
           <TextInput
-            label="ISP Name"
+            label={t('intelligence.ispName')}
             placeholder="Rostelecom"
             value={reportISP}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
@@ -407,8 +409,8 @@ export function IntelligencePage() {
             styles={inputStyles}
           />
           <Select
-            label="Protocol"
-            placeholder="Select protocol"
+            label={t('intelligence.protocol')}
+            placeholder={t('intelligence.selectProtocol')}
             data={PROTOCOLS}
             value={reportProtocol}
             onChange={setReportProtocol}
@@ -422,8 +424,8 @@ export function IntelligencePage() {
             }}
           />
           <Select
-            label="Status"
-            placeholder="Select status"
+            label={t('intelligence.statusLabel')}
+            placeholder={t('intelligence.selectStatus')}
             data={STATUSES}
             value={reportStatus}
             onChange={setReportStatus}
@@ -444,7 +446,7 @@ export function IntelligencePage() {
             radius="md"
             fullWidth
           >
-            Submit Report
+            {t('intelligence.submit')}
           </Button>
         </Stack>
       </Modal>

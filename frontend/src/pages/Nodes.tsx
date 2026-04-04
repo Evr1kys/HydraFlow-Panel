@@ -22,6 +22,7 @@ import {
   IconServer,
   IconCircleFilled,
 } from '@tabler/icons-react';
+import { useTranslation } from 'react-i18next';
 import {
   getNodes,
   createNode,
@@ -61,6 +62,7 @@ const thStyle = {
 };
 
 export function NodesPage() {
+  const { t } = useTranslation();
   const [nodes, setNodes] = useState<Node[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
@@ -77,14 +79,14 @@ export function NodesPage() {
       setNodes(data);
     } catch {
       notifications.show({
-        title: 'Error',
-        message: 'Failed to load nodes',
+        title: t('common.error'),
+        message: t('notification.nodesError'),
         color: 'red',
       });
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     fetchNodes();
@@ -106,15 +108,15 @@ export function NodesPage() {
       setNewPort(443);
       setNewApiKey('');
       notifications.show({
-        title: 'Success',
-        message: 'Node added',
+        title: t('common.success'),
+        message: t('notification.nodeAdded'),
         color: 'teal',
       });
       await fetchNodes();
     } catch {
       notifications.show({
-        title: 'Error',
-        message: 'Failed to add node',
+        title: t('common.error'),
+        message: t('notification.nodeAddError'),
         color: 'red',
       });
     } finally {
@@ -126,15 +128,15 @@ export function NodesPage() {
     try {
       await deleteNode(id);
       notifications.show({
-        title: 'Success',
-        message: 'Node deleted',
+        title: t('common.success'),
+        message: t('notification.nodeDeleted'),
         color: 'teal',
       });
       await fetchNodes();
     } catch {
       notifications.show({
-        title: 'Error',
-        message: 'Failed to delete node',
+        title: t('common.error'),
+        message: t('notification.nodeDeleteError'),
         color: 'red',
       });
     }
@@ -146,14 +148,14 @@ export function NodesPage() {
       const updated = await checkNodeHealth(id);
       setNodes((prev) => prev.map((n) => (n.id === id ? updated : n)));
       notifications.show({
-        title: 'Health Check',
-        message: `Node is ${updated.status}`,
+        title: t('common.success'),
+        message: t('notification.healthCheckResult', { status: updated.status }),
         color: updated.status === 'online' ? 'teal' : 'red',
       });
     } catch {
       notifications.show({
-        title: 'Error',
-        message: 'Health check failed',
+        title: t('common.error'),
+        message: t('notification.healthCheckError'),
         color: 'red',
       });
     } finally {
@@ -195,7 +197,7 @@ export function NodesPage() {
             <IconServer size={20} color="#20C997" stroke={1.5} />
           </Box>
           <Text size="22px" fw={700} style={{ color: '#C1C2C5' }}>
-            Nodes
+            {t('nodes.title')}
           </Text>
           <Badge
             variant="light"
@@ -213,7 +215,7 @@ export function NodesPage() {
           radius="md"
           onClick={() => setCreateOpen(true)}
         >
-          Add Node
+          {t('nodes.addNode')}
         </Button>
       </Group>
 
@@ -234,11 +236,11 @@ export function NodesPage() {
                   backgroundColor: 'rgba(255,255,255,0.02)',
                 }}
               >
-                <Table.Th style={thStyle}>Name</Table.Th>
-                <Table.Th style={thStyle}>Address</Table.Th>
-                <Table.Th style={thStyle}>Status</Table.Th>
-                <Table.Th style={thStyle}>Last Checked</Table.Th>
-                <Table.Th style={{ ...thStyle, width: 100 }}>Actions</Table.Th>
+                <Table.Th style={thStyle}>{t('nodes.name')}</Table.Th>
+                <Table.Th style={thStyle}>{t('nodes.address')}</Table.Th>
+                <Table.Th style={thStyle}>{t('nodes.status')}</Table.Th>
+                <Table.Th style={thStyle}>{t('nodes.lastChecked')}</Table.Th>
+                <Table.Th style={{ ...thStyle, width: 100 }}>{t('nodes.actions')}</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -287,7 +289,7 @@ export function NodesPage() {
                       <Text size="sm" style={{ color: '#909296' }}>
                         {node.lastCheck
                           ? new Date(node.lastCheck).toLocaleString()
-                          : 'Never'}
+                          : t('nodes.never')}
                       </Text>
                     </Table.Td>
                     <Table.Td>
@@ -330,7 +332,7 @@ export function NodesPage() {
                     >
                       <IconServer size={40} color="#373A40" stroke={1} />
                       <Text ta="center" size="sm" style={{ color: '#5c5f66' }}>
-                        No nodes configured
+                        {t('nodes.noNodes')}
                       </Text>
                     </Box>
                   </Table.Td>
@@ -345,7 +347,7 @@ export function NodesPage() {
       <Modal
         opened={createOpen}
         onClose={() => setCreateOpen(false)}
-        title="Add Node"
+        title={t('nodes.addNode')}
         radius="lg"
         styles={{
           content: {
@@ -362,28 +364,28 @@ export function NodesPage() {
       >
         <Stack gap="md" mt="md">
           <TextInput
-            label="Name"
+            label={t('nodes.name')}
             placeholder="Node-1"
             value={newName}
             onChange={(e) => setNewName(e.currentTarget.value)}
             styles={inputStyles}
           />
           <TextInput
-            label="Address"
+            label={t('nodes.address')}
             placeholder="192.168.1.100"
             value={newAddress}
             onChange={(e) => setNewAddress(e.currentTarget.value)}
             styles={inputStyles}
           />
           <NumberInput
-            label="Port"
+            label={t('nodes.port')}
             value={newPort}
             onChange={(v) => setNewPort(Number(v))}
             styles={inputStyles}
           />
           <TextInput
-            label="API Key"
-            placeholder="Optional"
+            label={t('nodes.apiKey')}
+            placeholder={t('nodes.optional')}
             value={newApiKey}
             onChange={(e) => setNewApiKey(e.currentTarget.value)}
             styles={inputStyles}
@@ -396,7 +398,7 @@ export function NodesPage() {
             radius="md"
             fullWidth
           >
-            Add Node
+            {t('nodes.addNode')}
           </Button>
         </Stack>
       </Modal>

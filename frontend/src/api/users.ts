@@ -47,3 +47,13 @@ export async function bulkDeleteUsers(ids: string[]): Promise<{ count: number }>
   const response = await client.delete<{ count: number }>('/users/bulk', { data: { ids } });
   return response.data;
 }
+
+export async function renewUser(id: string, days: number): Promise<User> {
+  const response = await client.post<User>(`/users/${id}/renew`, { days });
+  return response.data;
+}
+
+export async function resetUserTraffic(id: string): Promise<User> {
+  const response = await client.post<User>(`/users/${id}/reset-traffic`);
+  return response.data;
+}

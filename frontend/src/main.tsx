@@ -6,6 +6,7 @@ import { ModalsProvider } from '@mantine/modals';
 import { Notifications } from '@mantine/notifications';
 import { theme, globalStyles } from './theme';
 import { App } from './App';
+import './i18n';
 
 import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
