@@ -4,7 +4,6 @@ import {
   Button,
   Group,
   Text,
-  Badge,
   TextInput,
   NumberInput,
   Modal,
@@ -12,10 +11,11 @@ import {
   ActionIcon,
   Menu,
   Box,
-  Title,
   Loader,
   Checkbox,
   Progress,
+  Paper,
+  Badge,
 } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
@@ -28,6 +28,8 @@ import {
   IconTrash,
   IconUserCheck,
   IconUserOff,
+  IconUsers,
+  IconCircleFilled,
 } from '@tabler/icons-react';
 import {
   getUsers,
@@ -39,6 +41,35 @@ import {
   bulkDeleteUsers,
 } from '../api/users';
 import type { User } from '../types';
+
+const cardStyle = {
+  backgroundColor: '#1E2128',
+  border: '1px solid rgba(255,255,255,0.06)',
+  borderRadius: 12,
+};
+
+const inputStyles = {
+  input: {
+    backgroundColor: '#161B23',
+    border: '1px solid rgba(255,255,255,0.06)',
+    color: '#C1C2C5',
+    borderRadius: 8,
+  },
+  label: {
+    color: '#909296',
+    fontSize: '12px',
+    fontWeight: 600,
+    marginBottom: 4,
+  },
+};
+
+const thStyle = {
+  color: '#5c5f66',
+  fontSize: '11px',
+  fontWeight: 700,
+  letterSpacing: '0.8px',
+  textTransform: 'uppercase' as const,
+};
 
 function formatBytes(bytesStr: string): string {
   const bytes = Number(bytesStr);
@@ -81,40 +112,20 @@ function isLimitExceeded(user: User): boolean {
   return used >= Number(user.trafficLimit);
 }
 
-function getStatusBadge(user: User) {
+function getStatusInfo(user: User): { label: string; dotColor: string } {
   if (!user.enabled) {
-    return (
-      <Badge color="red" variant="light">
-        Disabled
-      </Badge>
-    );
+    return { label: 'Disabled', dotColor: '#ff6b6b' };
   }
   if (isExpired(user)) {
-    return (
-      <Badge color="red" variant="light">
-        Expired
-      </Badge>
-    );
+    return { label: 'Expired', dotColor: '#ff6b6b' };
   }
   if (isLimitExceeded(user)) {
-    return (
-      <Badge color="red" variant="light">
-        Limit Exceeded
-      </Badge>
-    );
+    return { label: 'Limit Exceeded', dotColor: '#ff6b6b' };
   }
   if (isExpiringSoon(user)) {
-    return (
-      <Badge color="yellow" variant="light">
-        Expiring Soon
-      </Badge>
-    );
+    return { label: 'Expiring Soon', dotColor: '#FCC419' };
   }
-  return (
-    <Badge color="teal" variant="light">
-      Active
-    </Badge>
-  );
+  return { label: 'Active', dotColor: '#51cf66' };
 }
 
 export function UsersPage() {
@@ -320,15 +331,6 @@ export function UsersPage() {
       (u.remark?.toLowerCase().includes(search.toLowerCase()) ?? false),
   );
 
-  const inputStyles = {
-    input: {
-      backgroundColor: '#060a12',
-      borderColor: '#1a2940',
-      color: '#d0d7e3',
-    },
-    label: { color: '#97a8c2' },
-  };
-
   if (loading) {
     return (
       <Box
@@ -346,54 +348,72 @@ export function UsersPage() {
 
   return (
     <Stack gap="lg">
+      {/* Header */}
       <Group justify="space-between">
-        <Title order={2} style={{ color: '#d0d7e3' }}>
-          Users
-        </Title>
+        <Group gap="sm">
+          <Text size="22px" fw={700} style={{ color: '#C1C2C5' }}>
+            Users
+          </Text>
+          <Badge
+            variant="light"
+            color="teal"
+            size="lg"
+            style={{ fontFamily: "'JetBrains Mono', monospace" }}
+          >
+            {users.length}
+          </Badge>
+        </Group>
         <Button
           leftSection={<IconPlus size={16} />}
           variant="gradient"
           gradient={{ from: 'teal', to: 'cyan' }}
+          radius="md"
           onClick={() => setCreateOpen(true)}
         >
           Add User
         </Button>
       </Group>
 
+      {/* Search */}
       <TextInput
         placeholder="Search by email or remark..."
-        leftSection={<IconSearch size={16} />}
+        leftSection={<IconSearch size={16} color="#5c5f66" />}
         value={search}
         onChange={(e) => setSearch(e.currentTarget.value)}
+        radius="md"
         styles={{
           input: {
-            backgroundColor: '#0b1121',
-            borderColor: '#1a2940',
-            color: '#d0d7e3',
+            backgroundColor: '#1E2128',
+            border: '1px solid rgba(255,255,255,0.06)',
+            color: '#C1C2C5',
+            height: 42,
           },
         }}
       />
 
+      {/* Bulk actions bar */}
       {selectedIds.size > 0 && (
-        <Group
-          gap="sm"
+        <Paper
           p="sm"
           style={{
-            backgroundColor: '#0b1121',
-            border: '1px solid #1a2940',
-            borderRadius: 8,
+            ...cardStyle,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
           }}
         >
-          <Text size="sm" style={{ color: '#97a8c2' }}>
+          <Text size="sm" fw={500} style={{ color: '#909296' }}>
             {selectedIds.size} selected
           </Text>
           <Button
             size="xs"
             variant="light"
             color="teal"
+            radius="md"
             leftSection={<IconUserCheck size={14} />}
             loading={bulkLoading}
             onClick={handleBulkEnable}
+            styles={{ root: { border: '1px solid rgba(32,201,151,0.2)' } }}
           >
             Enable All
           </Button>
@@ -401,9 +421,11 @@ export function UsersPage() {
             size="xs"
             variant="light"
             color="yellow"
+            radius="md"
             leftSection={<IconUserOff size={14} />}
             loading={bulkLoading}
             onClick={handleBulkDisable}
+            styles={{ root: { border: '1px solid rgba(252,196,25,0.2)' } }}
           >
             Disable All
           </Button>
@@ -411,187 +433,233 @@ export function UsersPage() {
             size="xs"
             variant="light"
             color="red"
+            radius="md"
             leftSection={<IconTrash size={14} />}
             loading={bulkLoading}
             onClick={handleBulkDelete}
+            styles={{ root: { border: '1px solid rgba(255,107,107,0.2)' } }}
           >
             Delete Selected
           </Button>
-        </Group>
+        </Paper>
       )}
 
-      <Box
-        style={{
-          backgroundColor: '#0b1121',
-          border: '1px solid #1a2940',
-          borderRadius: 8,
-          overflow: 'auto',
-        }}
-      >
-        <Table horizontalSpacing="md" verticalSpacing="sm">
-          <Table.Thead>
-            <Table.Tr style={{ borderBottom: '1px solid #1a2940' }}>
-              <Table.Th style={{ width: 40 }}>
-                <Checkbox
-                  checked={
-                    filteredUsers.length > 0 &&
-                    selectedIds.size === filteredUsers.length
-                  }
-                  indeterminate={
-                    selectedIds.size > 0 &&
-                    selectedIds.size < filteredUsers.length
-                  }
-                  onChange={toggleAllSelected}
-                  color="teal"
-                />
-              </Table.Th>
-              <Table.Th style={{ color: '#97a8c2' }}>Email</Table.Th>
-              <Table.Th style={{ color: '#97a8c2' }}>Status</Table.Th>
-              <Table.Th style={{ color: '#97a8c2' }}>Traffic</Table.Th>
-              <Table.Th style={{ color: '#97a8c2' }}>Limit</Table.Th>
-              <Table.Th style={{ color: '#97a8c2' }}>Expiry</Table.Th>
-              <Table.Th style={{ color: '#97a8c2' }}>Actions</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {filteredUsers.map((user) => {
-              const trafficPercent = getTrafficPercent(user);
-              const totalTraffic =
-                Number(user.trafficUp) + Number(user.trafficDown);
+      {/* Table */}
+      <Paper style={{ ...cardStyle, overflow: 'hidden' }}>
+        <Box style={{ overflowX: 'auto' }}>
+          <Table
+            horizontalSpacing="md"
+            verticalSpacing="sm"
+            styles={{
+              table: { borderCollapse: 'separate', borderSpacing: 0 },
+            }}
+          >
+            <Table.Thead>
+              <Table.Tr
+                style={{
+                  borderBottom: '1px solid rgba(255,255,255,0.06)',
+                  backgroundColor: 'rgba(255,255,255,0.02)',
+                }}
+              >
+                <Table.Th style={{ ...thStyle, width: 40, padding: '12px 16px' }}>
+                  <Checkbox
+                    checked={filteredUsers.length > 0 && selectedIds.size === filteredUsers.length}
+                    indeterminate={selectedIds.size > 0 && selectedIds.size < filteredUsers.length}
+                    onChange={toggleAllSelected}
+                    color="teal"
+                    size="xs"
+                  />
+                </Table.Th>
+                <Table.Th style={thStyle}>User</Table.Th>
+                <Table.Th style={thStyle}>Status</Table.Th>
+                <Table.Th style={thStyle}>Traffic</Table.Th>
+                <Table.Th style={thStyle}>Limit</Table.Th>
+                <Table.Th style={thStyle}>Expiry</Table.Th>
+                <Table.Th style={{ ...thStyle, width: 50 }} />
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {filteredUsers.map((user, idx) => {
+                const statusInfo = getStatusInfo(user);
+                const trafficPercent = getTrafficPercent(user);
+                const totalTraffic = Number(user.trafficUp) + Number(user.trafficDown);
 
-              return (
-                <Table.Tr
-                  key={user.id}
-                  style={{ borderBottom: '1px solid #111b30' }}
-                >
-                  <Table.Td>
-                    <Checkbox
-                      checked={selectedIds.has(user.id)}
-                      onChange={() => toggleSelected(user.id)}
-                      color="teal"
-                    />
-                  </Table.Td>
-                  <Table.Td>
-                    <Text size="sm" style={{ color: '#d0d7e3' }}>
-                      {user.email}
-                    </Text>
-                    {user.remark && (
-                      <Text size="xs" c="dimmed">
-                        {user.remark}
+                return (
+                  <Table.Tr
+                    key={user.id}
+                    style={{
+                      borderBottom: '1px solid rgba(255,255,255,0.03)',
+                      backgroundColor: idx % 2 === 1 ? 'rgba(255,255,255,0.015)' : 'transparent',
+                      transition: 'background-color 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(255,255,255,0.03)';
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLElement).style.backgroundColor =
+                        idx % 2 === 1 ? 'rgba(255,255,255,0.015)' : 'transparent';
+                    }}
+                  >
+                    <Table.Td style={{ padding: '12px 16px' }}>
+                      <Checkbox
+                        checked={selectedIds.has(user.id)}
+                        onChange={() => toggleSelected(user.id)}
+                        color="teal"
+                        size="xs"
+                      />
+                    </Table.Td>
+                    <Table.Td>
+                      <Box>
+                        <Text size="sm" fw={500} style={{ color: '#C1C2C5' }}>
+                          {user.email}
+                        </Text>
+                        {user.remark && (
+                          <Text size="xs" style={{ color: '#5c5f66' }}>
+                            {user.remark}
+                          </Text>
+                        )}
+                      </Box>
+                    </Table.Td>
+                    <Table.Td>
+                      <Group gap={6}>
+                        <IconCircleFilled size={8} color={statusInfo.dotColor} />
+                        <Text size="xs" fw={500} style={{ color: statusInfo.dotColor }}>
+                          {statusInfo.label}
+                        </Text>
+                      </Group>
+                    </Table.Td>
+                    <Table.Td>
+                      <Box>
+                        <Text size="sm" ff="monospace" fw={500} style={{ color: '#C1C2C5' }}>
+                          {formatBytes(String(totalTraffic))}
+                        </Text>
+                        {trafficPercent !== null && (
+                          <Progress
+                            value={trafficPercent}
+                            size={4}
+                            radius="xl"
+                            mt={4}
+                            color={trafficPercent > 90 ? 'red' : trafficPercent > 70 ? 'yellow' : 'teal'}
+                            style={{ width: 80 }}
+                            styles={{ root: { backgroundColor: 'rgba(255,255,255,0.06)' } }}
+                          />
+                        )}
+                      </Box>
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="sm" ff="monospace" fw={500} style={{ color: '#909296' }}>
+                        {user.trafficLimit
+                          ? formatBytes(user.trafficLimit)
+                          : 'Unlimited'}
                       </Text>
-                    )}
-                  </Table.Td>
-                  <Table.Td>{getStatusBadge(user)}</Table.Td>
-                  <Table.Td>
-                    <Stack gap={4}>
-                      <Text size="sm" ff="monospace" style={{ color: '#d0d7e3' }}>
-                        {formatBytes(String(totalTraffic))}
+                    </Table.Td>
+                    <Table.Td>
+                      <Group gap={6}>
+                        <Text size="sm" style={{ color: '#909296' }}>
+                          {user.expiryDate
+                            ? new Date(user.expiryDate).toLocaleDateString()
+                            : 'Never'}
+                        </Text>
+                        {isExpired(user) && (
+                          <Badge color="red" variant="light" size="xs" radius="sm">
+                            Expired
+                          </Badge>
+                        )}
+                        {!isExpired(user) && isExpiringSoon(user) && (
+                          <Badge color="yellow" variant="light" size="xs" radius="sm">
+                            Soon
+                          </Badge>
+                        )}
+                      </Group>
+                    </Table.Td>
+                    <Table.Td>
+                      <Menu shadow="md" width={180} position="bottom-end">
+                        <Menu.Target>
+                          <ActionIcon variant="subtle" color="gray" radius="md" style={{ color: '#5c5f66' }}>
+                            <IconDotsVertical size={16} />
+                          </ActionIcon>
+                        </Menu.Target>
+                        <Menu.Dropdown
+                          style={{
+                            backgroundColor: '#1E2128',
+                            border: '1px solid rgba(255,255,255,0.08)',
+                            borderRadius: 10,
+                          }}
+                        >
+                          <Menu.Item
+                            leftSection={<IconCopy size={14} />}
+                            onClick={() => handleCopySubLink(user)}
+                            style={{ fontSize: '13px' }}
+                          >
+                            Copy Sub Link
+                          </Menu.Item>
+                          <Menu.Item
+                            leftSection={<IconToggleLeft size={14} />}
+                            onClick={() => handleToggle(user.id)}
+                            style={{ fontSize: '13px' }}
+                          >
+                            {user.enabled ? 'Disable' : 'Enable'}
+                          </Menu.Item>
+                          <Menu.Divider style={{ borderColor: 'rgba(255,255,255,0.06)' }} />
+                          <Menu.Item
+                            color="red"
+                            leftSection={<IconTrash size={14} />}
+                            onClick={() => handleDelete(user.id)}
+                            style={{ fontSize: '13px' }}
+                          >
+                            Delete
+                          </Menu.Item>
+                        </Menu.Dropdown>
+                      </Menu>
+                    </Table.Td>
+                  </Table.Tr>
+                );
+              })}
+              {filteredUsers.length === 0 && (
+                <Table.Tr>
+                  <Table.Td colSpan={7}>
+                    <Box
+                      py={48}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: 8,
+                      }}
+                    >
+                      <IconUsers size={40} color="#373A40" stroke={1} />
+                      <Text ta="center" size="sm" style={{ color: '#5c5f66' }}>
+                        {search ? 'No users match your search' : 'No users yet'}
                       </Text>
-                      {trafficPercent !== null && (
-                        <Progress
-                          value={trafficPercent}
-                          size="sm"
-                          color={
-                            trafficPercent >= 90
-                              ? 'red'
-                              : trafficPercent >= 70
-                                ? 'yellow'
-                                : 'teal'
-                          }
-                          style={{ width: 80 }}
-                        />
-                      )}
-                    </Stack>
-                  </Table.Td>
-                  <Table.Td>
-                    <Text size="sm" ff="monospace" style={{ color: '#d0d7e3' }}>
-                      {user.trafficLimit
-                        ? formatBytes(user.trafficLimit)
-                        : 'Unlimited'}
-                    </Text>
-                  </Table.Td>
-                  <Table.Td>
-                    <Group gap={6}>
-                      <Text size="sm" style={{ color: '#d0d7e3' }}>
-                        {user.expiryDate
-                          ? new Date(user.expiryDate).toLocaleDateString()
-                          : 'Never'}
-                      </Text>
-                      {isExpired(user) && (
-                        <Badge color="red" variant="light" size="xs">
-                          Expired
-                        </Badge>
-                      )}
-                      {!isExpired(user) && isExpiringSoon(user) && (
-                        <Badge color="yellow" variant="light" size="xs">
-                          Soon
-                        </Badge>
-                      )}
-                    </Group>
-                  </Table.Td>
-                  <Table.Td>
-                    <Menu shadow="md" width={180}>
-                      <Menu.Target>
-                        <ActionIcon variant="subtle" color="gray">
-                          <IconDotsVertical size={16} />
-                        </ActionIcon>
-                      </Menu.Target>
-                      <Menu.Dropdown
-                        style={{
-                          backgroundColor: '#111b30',
-                          borderColor: '#1a2940',
-                        }}
-                      >
-                        <Menu.Item
-                          leftSection={<IconCopy size={14} />}
-                          onClick={() => handleCopySubLink(user)}
-                        >
-                          Copy Sub Link
-                        </Menu.Item>
-                        <Menu.Item
-                          leftSection={<IconToggleLeft size={14} />}
-                          onClick={() => handleToggle(user.id)}
-                        >
-                          {user.enabled ? 'Disable' : 'Enable'}
-                        </Menu.Item>
-                        <Menu.Divider />
-                        <Menu.Item
-                          color="red"
-                          leftSection={<IconTrash size={14} />}
-                          onClick={() => handleDelete(user.id)}
-                        >
-                          Delete
-                        </Menu.Item>
-                      </Menu.Dropdown>
-                    </Menu>
+                    </Box>
                   </Table.Td>
                 </Table.Tr>
-              );
-            })}
-            {filteredUsers.length === 0 && (
-              <Table.Tr>
-                <Table.Td colSpan={7}>
-                  <Text ta="center" c="dimmed" py="xl">
-                    {search ? 'No users match your search' : 'No users yet'}
-                  </Text>
-                </Table.Td>
-              </Table.Tr>
-            )}
-          </Table.Tbody>
-        </Table>
-      </Box>
+              )}
+            </Table.Tbody>
+          </Table>
+        </Box>
+      </Paper>
 
+      {/* Create User Modal */}
       <Modal
         opened={createOpen}
         onClose={() => setCreateOpen(false)}
         title="Add User"
+        radius="lg"
         styles={{
-          content: { backgroundColor: '#0b1121', borderColor: '#1a2940' },
-          header: { backgroundColor: '#0b1121' },
-          title: { color: '#d0d7e3' },
+          content: {
+            backgroundColor: '#1E2128',
+            border: '1px solid rgba(255,255,255,0.06)',
+          },
+          header: {
+            backgroundColor: '#1E2128',
+            borderBottom: '1px solid rgba(255,255,255,0.06)',
+          },
+          title: { color: '#C1C2C5', fontWeight: 600 },
+          close: { color: '#909296' },
         }}
       >
-        <Stack gap="md">
+        <Stack gap="md" mt="md">
           <TextInput
             label="Email"
             placeholder="user@example.com"
@@ -629,6 +697,8 @@ export function UsersPage() {
             gradient={{ from: 'teal', to: 'cyan' }}
             loading={creating}
             onClick={handleCreate}
+            radius="md"
+            fullWidth
           >
             Create User
           </Button>

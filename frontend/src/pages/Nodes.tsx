@@ -4,15 +4,15 @@ import {
   Button,
   Group,
   Text,
-  Badge,
   TextInput,
   NumberInput,
   Modal,
   Stack,
   ActionIcon,
   Box,
-  Title,
   Loader,
+  Paper,
+  Badge,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import {
@@ -20,6 +20,7 @@ import {
   IconTrash,
   IconRefresh,
   IconServer,
+  IconCircleFilled,
 } from '@tabler/icons-react';
 import {
   getNodes,
@@ -28,6 +29,35 @@ import {
   checkNodeHealth,
 } from '../api/nodes';
 import type { Node } from '../types';
+
+const cardStyle = {
+  backgroundColor: '#1E2128',
+  border: '1px solid rgba(255,255,255,0.06)',
+  borderRadius: 12,
+};
+
+const inputStyles = {
+  input: {
+    backgroundColor: '#161B23',
+    border: '1px solid rgba(255,255,255,0.06)',
+    color: '#C1C2C5',
+    borderRadius: 8,
+  },
+  label: {
+    color: '#909296',
+    fontSize: '12px',
+    fontWeight: 600,
+    marginBottom: 4,
+  },
+};
+
+const thStyle = {
+  color: '#5c5f66',
+  fontSize: '11px',
+  fontWeight: 700,
+  letterSpacing: '0.8px',
+  textTransform: 'uppercase' as const,
+};
 
 export function NodesPage() {
   const [nodes, setNodes] = useState<Node[]>([]);
@@ -130,15 +160,6 @@ export function NodesPage() {
     }
   };
 
-  const inputStyles = {
-    input: {
-      backgroundColor: '#060a12',
-      borderColor: '#1a2940',
-      color: '#d0d7e3',
-    },
-    label: { color: '#97a8c2' },
-  };
-
   if (loading) {
     return (
       <Box
@@ -156,123 +177,189 @@ export function NodesPage() {
 
   return (
     <Stack gap="lg">
+      {/* Header */}
       <Group justify="space-between">
         <Group gap="sm">
-          <IconServer size={28} color="#00e8c6" />
-          <Title order={2} style={{ color: '#d0d7e3' }}>
+          <Box
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: '50%',
+              backgroundColor: 'rgba(32,201,151,0.1)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <IconServer size={20} color="#20C997" stroke={1.5} />
+          </Box>
+          <Text size="22px" fw={700} style={{ color: '#C1C2C5' }}>
             Nodes
-          </Title>
+          </Text>
+          <Badge
+            variant="light"
+            color="teal"
+            size="lg"
+            style={{ fontFamily: "'JetBrains Mono', monospace" }}
+          >
+            {nodes.length}
+          </Badge>
         </Group>
         <Button
           leftSection={<IconPlus size={16} />}
           variant="gradient"
           gradient={{ from: 'teal', to: 'cyan' }}
+          radius="md"
           onClick={() => setCreateOpen(true)}
         >
           Add Node
         </Button>
       </Group>
 
-      <Box
-        style={{
-          backgroundColor: '#0b1121',
-          border: '1px solid #1a2940',
-          borderRadius: 8,
-          overflow: 'auto',
-        }}
-      >
-        <Table horizontalSpacing="md" verticalSpacing="sm">
-          <Table.Thead>
-            <Table.Tr style={{ borderBottom: '1px solid #1a2940' }}>
-              <Table.Th style={{ color: '#97a8c2' }}>Name</Table.Th>
-              <Table.Th style={{ color: '#97a8c2' }}>Address</Table.Th>
-              <Table.Th style={{ color: '#97a8c2' }}>Status</Table.Th>
-              <Table.Th style={{ color: '#97a8c2' }}>Last Checked</Table.Th>
-              <Table.Th style={{ color: '#97a8c2' }}>Actions</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {nodes.map((node) => (
+      {/* Table */}
+      <Paper style={{ ...cardStyle, overflow: 'hidden' }}>
+        <Box style={{ overflowX: 'auto' }}>
+          <Table
+            horizontalSpacing="md"
+            verticalSpacing="sm"
+            styles={{
+              table: { borderCollapse: 'separate', borderSpacing: 0 },
+            }}
+          >
+            <Table.Thead>
               <Table.Tr
-                key={node.id}
-                style={{ borderBottom: '1px solid #111b30' }}
+                style={{
+                  borderBottom: '1px solid rgba(255,255,255,0.06)',
+                  backgroundColor: 'rgba(255,255,255,0.02)',
+                }}
               >
-                <Table.Td>
-                  <Text size="sm" fw={500} style={{ color: '#d0d7e3' }}>
-                    {node.name}
-                  </Text>
-                </Table.Td>
-                <Table.Td>
-                  <Text size="sm" ff="monospace" style={{ color: '#d0d7e3' }}>
-                    {node.address}:{node.port}
-                  </Text>
-                </Table.Td>
-                <Table.Td>
-                  <Badge
-                    color={
-                      node.status === 'online'
-                        ? 'teal'
-                        : node.status === 'offline'
-                          ? 'red'
-                          : 'gray'
-                    }
-                    variant="light"
+                <Table.Th style={thStyle}>Name</Table.Th>
+                <Table.Th style={thStyle}>Address</Table.Th>
+                <Table.Th style={thStyle}>Status</Table.Th>
+                <Table.Th style={thStyle}>Last Checked</Table.Th>
+                <Table.Th style={{ ...thStyle, width: 100 }}>Actions</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {nodes.map((node, idx) => {
+                const dotColor =
+                  node.status === 'online'
+                    ? '#51cf66'
+                    : node.status === 'offline'
+                      ? '#ff6b6b'
+                      : '#5c5f66';
+                return (
+                  <Table.Tr
+                    key={node.id}
+                    style={{
+                      borderBottom: '1px solid rgba(255,255,255,0.03)',
+                      backgroundColor: idx % 2 === 1 ? 'rgba(255,255,255,0.015)' : 'transparent',
+                      transition: 'background-color 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(255,255,255,0.03)';
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLElement).style.backgroundColor =
+                        idx % 2 === 1 ? 'rgba(255,255,255,0.015)' : 'transparent';
+                    }}
                   >
-                    {node.status}
-                  </Badge>
-                </Table.Td>
-                <Table.Td>
-                  <Text size="sm" style={{ color: '#d0d7e3' }}>
-                    {node.lastCheck
-                      ? new Date(node.lastCheck).toLocaleString()
-                      : 'Never'}
-                  </Text>
-                </Table.Td>
-                <Table.Td>
-                  <Group gap="xs">
-                    <ActionIcon
-                      variant="subtle"
-                      color="teal"
-                      loading={checkingId === node.id}
-                      onClick={() => handleCheck(node.id)}
+                    <Table.Td>
+                      <Text size="sm" fw={500} style={{ color: '#C1C2C5' }}>
+                        {node.name}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="sm" ff="monospace" fw={500} style={{ color: '#C1C2C5' }}>
+                        {node.address}:{node.port}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Group gap={6}>
+                        <IconCircleFilled size={8} color={dotColor} />
+                        <Text size="xs" fw={500} style={{ color: dotColor }}>
+                          {node.status}
+                        </Text>
+                      </Group>
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="sm" style={{ color: '#909296' }}>
+                        {node.lastCheck
+                          ? new Date(node.lastCheck).toLocaleString()
+                          : 'Never'}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Group gap="xs">
+                        <ActionIcon
+                          variant="subtle"
+                          color="teal"
+                          radius="md"
+                          loading={checkingId === node.id}
+                          onClick={() => handleCheck(node.id)}
+                          style={{ border: '1px solid rgba(32,201,151,0.15)' }}
+                        >
+                          <IconRefresh size={14} />
+                        </ActionIcon>
+                        <ActionIcon
+                          variant="subtle"
+                          color="red"
+                          radius="md"
+                          onClick={() => handleDelete(node.id)}
+                          style={{ border: '1px solid rgba(255,107,107,0.15)' }}
+                        >
+                          <IconTrash size={14} />
+                        </ActionIcon>
+                      </Group>
+                    </Table.Td>
+                  </Table.Tr>
+                );
+              })}
+              {nodes.length === 0 && (
+                <Table.Tr>
+                  <Table.Td colSpan={5}>
+                    <Box
+                      py={48}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: 8,
+                      }}
                     >
-                      <IconRefresh size={16} />
-                    </ActionIcon>
-                    <ActionIcon
-                      variant="subtle"
-                      color="red"
-                      onClick={() => handleDelete(node.id)}
-                    >
-                      <IconTrash size={16} />
-                    </ActionIcon>
-                  </Group>
-                </Table.Td>
-              </Table.Tr>
-            ))}
-            {nodes.length === 0 && (
-              <Table.Tr>
-                <Table.Td colSpan={5}>
-                  <Text ta="center" c="dimmed" py="xl">
-                    No nodes configured
-                  </Text>
-                </Table.Td>
-              </Table.Tr>
-            )}
-          </Table.Tbody>
-        </Table>
-      </Box>
+                      <IconServer size={40} color="#373A40" stroke={1} />
+                      <Text ta="center" size="sm" style={{ color: '#5c5f66' }}>
+                        No nodes configured
+                      </Text>
+                    </Box>
+                  </Table.Td>
+                </Table.Tr>
+              )}
+            </Table.Tbody>
+          </Table>
+        </Box>
+      </Paper>
 
+      {/* Create Node Modal */}
       <Modal
         opened={createOpen}
         onClose={() => setCreateOpen(false)}
         title="Add Node"
+        radius="lg"
         styles={{
-          content: { backgroundColor: '#0b1121', borderColor: '#1a2940' },
-          header: { backgroundColor: '#0b1121' },
-          title: { color: '#d0d7e3' },
+          content: {
+            backgroundColor: '#1E2128',
+            border: '1px solid rgba(255,255,255,0.06)',
+          },
+          header: {
+            backgroundColor: '#1E2128',
+            borderBottom: '1px solid rgba(255,255,255,0.06)',
+          },
+          title: { color: '#C1C2C5', fontWeight: 600 },
+          close: { color: '#909296' },
         }}
       >
-        <Stack gap="md">
+        <Stack gap="md" mt="md">
           <TextInput
             label="Name"
             placeholder="Node-1"
@@ -305,6 +392,8 @@ export function NodesPage() {
             gradient={{ from: 'teal', to: 'cyan' }}
             loading={creating}
             onClick={handleCreate}
+            radius="md"
+            fullWidth
           >
             Add Node
           </Button>

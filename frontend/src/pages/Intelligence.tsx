@@ -1,7 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   Stack,
-  Title,
   Paper,
   Text,
   Group,
@@ -14,6 +13,7 @@ import {
   TextInput,
   Box,
   Loader,
+  Timeline,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import {
@@ -32,16 +32,45 @@ const COUNTRIES = ['Russia', 'China', 'Iran'];
 const PROTOCOLS = ['VLESS+Reality', 'VLESS+WebSocket', 'Shadowsocks'];
 const STATUSES = ['working', 'slow', 'blocked'];
 
+const cardStyle = {
+  backgroundColor: '#1E2128',
+  border: '1px solid rgba(255,255,255,0.06)',
+  borderRadius: 12,
+};
+
+const inputStyles = {
+  input: {
+    backgroundColor: '#161B23',
+    border: '1px solid rgba(255,255,255,0.06)',
+    color: '#C1C2C5',
+    borderRadius: 8,
+  },
+  label: {
+    color: '#909296',
+    fontSize: '12px',
+    fontWeight: 600,
+    marginBottom: 4,
+  },
+};
+
+const thStyle = {
+  color: '#5c5f66',
+  fontSize: '11px',
+  fontWeight: 700,
+  letterSpacing: '0.8px',
+  textTransform: 'uppercase' as const,
+};
+
 function statusColor(status: string): string {
   switch (status) {
     case 'working':
-      return '#00e8c6';
+      return '#51cf66';
     case 'slow':
-      return '#fcc419';
+      return '#FCC419';
     case 'blocked':
       return '#ff6b6b';
     default:
-      return '#556880';
+      return '#5c5f66';
   }
 }
 
@@ -56,6 +85,24 @@ function statusBadgeColor(status: string): string {
     default:
       return 'gray';
   }
+}
+
+function SectionTitle({ children }: { children: string }) {
+  return (
+    <Text
+      size="11px"
+      fw={700}
+      mt="lg"
+      mb={8}
+      style={{
+        color: '#5c5f66',
+        letterSpacing: '1.5px',
+        textTransform: 'uppercase',
+      }}
+    >
+      {children}
+    </Text>
+  );
 }
 
 export function IntelligencePage() {
@@ -140,161 +187,205 @@ export function IntelligencePage() {
   }
 
   return (
-    <Stack gap="lg">
-      <Group justify="space-between">
+    <Stack gap={0}>
+      {/* Header */}
+      <Group justify="space-between" mb="lg">
         <Group gap="sm">
-          <IconRadar size={28} color="#00e8c6" />
-          <Title order={2} style={{ color: '#d0d7e3' }}>
+          <Box
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: '50%',
+              backgroundColor: 'rgba(32,201,151,0.1)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <IconRadar size={20} color="#20C997" stroke={1.5} />
+          </Box>
+          <Text size="22px" fw={700} style={{ color: '#C1C2C5' }}>
             ISP Intelligence
-          </Title>
+          </Text>
         </Group>
         <Button
           leftSection={<IconPlus size={16} />}
           variant="gradient"
           gradient={{ from: 'teal', to: 'cyan' }}
+          radius="md"
           onClick={() => setReportOpen(true)}
         >
           Report
         </Button>
       </Group>
 
+      {/* Country selector */}
       <SegmentedControl
         value={country}
         onChange={setCountry}
         data={COUNTRIES}
         color="teal"
+        radius="md"
+        mb="md"
         styles={{
-          root: { backgroundColor: '#0b1121' },
-          label: { color: '#97a8c2' },
+          root: {
+            backgroundColor: '#1E2128',
+            border: '1px solid rgba(255,255,255,0.06)',
+          },
+          label: { color: '#909296', fontSize: '13px', fontWeight: 500 },
         }}
       />
 
-      <Paper
-        radius="md"
-        style={{
-          backgroundColor: '#0b1121',
-          border: '1px solid #1a2940',
-          overflow: 'auto',
-        }}
-      >
-        <Table horizontalSpacing="md" verticalSpacing="sm">
-          <Table.Thead>
-            <Table.Tr style={{ borderBottom: '1px solid #1a2940' }}>
-              <Table.Th style={{ color: '#97a8c2' }}>ISP</Table.Th>
-              {PROTOCOLS.map((p) => (
-                <Table.Th key={p} style={{ color: '#97a8c2', textAlign: 'center' }}>
-                  {p}
-                </Table.Th>
-              ))}
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {data.map((entry) => (
+      {/* ISP Table */}
+      <Paper style={{ ...cardStyle, overflow: 'hidden' }}>
+        <Box style={{ overflowX: 'auto' }}>
+          <Table
+            horizontalSpacing="md"
+            verticalSpacing="sm"
+            styles={{
+              table: { borderCollapse: 'separate', borderSpacing: 0 },
+            }}
+          >
+            <Table.Thead>
               <Table.Tr
-                key={`${entry.country}-${entry.isp}`}
-                style={{ borderBottom: '1px solid #111b30' }}
-              >
-                <Table.Td>
-                  <Text fw={500} size="sm" style={{ color: '#d0d7e3' }}>
-                    {entry.isp}
-                  </Text>
-                </Table.Td>
-                {PROTOCOLS.map((protocol) => {
-                  const status = entry.protocols[protocol] ?? 'unknown';
-                  return (
-                    <Table.Td key={protocol} style={{ textAlign: 'center' }}>
-                      <Badge
-                        color={statusBadgeColor(status)}
-                        variant="light"
-                        size="sm"
-                        styles={{
-                          root: {
-                            borderColor: statusColor(status),
-                            borderWidth: 1,
-                            borderStyle: 'solid',
-                          },
-                        }}
-                      >
-                        {status}
-                      </Badge>
-                    </Table.Td>
-                  );
-                })}
-              </Table.Tr>
-            ))}
-            {data.length === 0 && (
-              <Table.Tr>
-                <Table.Td colSpan={4}>
-                  <Text ta="center" c="dimmed" py="xl">
-                    No intelligence data for {country}
-                  </Text>
-                </Table.Td>
-              </Table.Tr>
-            )}
-          </Table.Tbody>
-        </Table>
-      </Paper>
-
-      {alerts.length > 0 && (
-        <>
-          <Title order={4} style={{ color: '#d0d7e3' }} mt="sm">
-            Recent Alerts
-          </Title>
-          <Stack gap="xs">
-            {alerts.slice(0, 10).map((alert) => (
-              <Paper
-                key={alert.id}
-                p="sm"
-                radius="md"
                 style={{
-                  backgroundColor: '#0b1121',
-                  border: '1px solid #1a2940',
+                  borderBottom: '1px solid rgba(255,255,255,0.06)',
+                  backgroundColor: 'rgba(255,255,255,0.02)',
                 }}
               >
-                <Group gap="sm">
-                  <IconAlertTriangle size={16} color="#fcc419" />
-                  <Text size="sm" style={{ color: '#d0d7e3' }}>
-                    <Text span fw={600}>
-                      {alert.isp}
-                    </Text>{' '}
-                    ({alert.country}) -- {alert.protocol}:{' '}
-                    <Badge
-                      color={statusBadgeColor(alert.oldStatus)}
-                      variant="light"
-                      size="xs"
-                    >
+                <Table.Th style={thStyle}>ISP</Table.Th>
+                {PROTOCOLS.map((p) => (
+                  <Table.Th key={p} style={{ ...thStyle, textAlign: 'center' }}>
+                    {p}
+                  </Table.Th>
+                ))}
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {data.map((entry, idx) => (
+                <Table.Tr
+                  key={`${entry.country}-${entry.isp}`}
+                  style={{
+                    borderBottom: '1px solid rgba(255,255,255,0.03)',
+                    backgroundColor: idx % 2 === 1 ? 'rgba(255,255,255,0.015)' : 'transparent',
+                  }}
+                >
+                  <Table.Td>
+                    <Text fw={500} size="sm" style={{ color: '#C1C2C5' }}>
+                      {entry.isp}
+                    </Text>
+                  </Table.Td>
+                  {PROTOCOLS.map((protocol) => {
+                    const status = entry.protocols[protocol] ?? 'unknown';
+                    return (
+                      <Table.Td key={protocol} style={{ textAlign: 'center' }}>
+                        <Badge
+                          color={statusBadgeColor(status)}
+                          variant="light"
+                          size="sm"
+                          radius="md"
+                          styles={{
+                            root: {
+                              borderColor: `${statusColor(status)}33`,
+                              borderWidth: 1,
+                              borderStyle: 'solid',
+                            },
+                          }}
+                        >
+                          {status}
+                        </Badge>
+                      </Table.Td>
+                    );
+                  })}
+                </Table.Tr>
+              ))}
+              {data.length === 0 && (
+                <Table.Tr>
+                  <Table.Td colSpan={4}>
+                    <Box py={48} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                      <IconRadar size={40} color="#373A40" stroke={1} />
+                      <Text ta="center" size="sm" style={{ color: '#5c5f66' }}>
+                        No intelligence data for {country}
+                      </Text>
+                    </Box>
+                  </Table.Td>
+                </Table.Tr>
+              )}
+            </Table.Tbody>
+          </Table>
+        </Box>
+      </Paper>
+
+      {/* Recent Alerts */}
+      {alerts.length > 0 && (
+        <>
+          <SectionTitle>Recent Alerts</SectionTitle>
+          <Paper p="lg" style={cardStyle}>
+            <Timeline
+              active={alerts.length - 1}
+              bulletSize={24}
+              lineWidth={2}
+              color="yellow"
+              styles={{
+                itemTitle: { color: '#C1C2C5' },
+                itemBody: { paddingLeft: 4 },
+              }}
+            >
+              {alerts.slice(0, 10).map((alert) => (
+                <Timeline.Item
+                  key={alert.id}
+                  bullet={<IconAlertTriangle size={12} />}
+                  title={
+                    <Group gap={8}>
+                      <Text size="sm" fw={600} style={{ color: '#C1C2C5' }}>
+                        {alert.isp}
+                      </Text>
+                      <Badge size="xs" variant="light" color="gray">
+                        {alert.country}
+                      </Badge>
+                    </Group>
+                  }
+                >
+                  <Text size="xs" mt={4} style={{ color: '#909296' }}>
+                    {alert.protocol}:{' '}
+                    <Badge color={statusBadgeColor(alert.oldStatus)} variant="light" size="xs">
                       {alert.oldStatus}
-                    </Badge>{' '}
-                    {'->'}{' '}
-                    <Badge
-                      color={statusBadgeColor(alert.newStatus)}
-                      variant="light"
-                      size="xs"
-                    >
+                    </Badge>
+                    {' -> '}
+                    <Badge color={statusBadgeColor(alert.newStatus)} variant="light" size="xs">
                       {alert.newStatus}
                     </Badge>
                   </Text>
-                  <Text size="xs" c="dimmed" ml="auto">
-                    {new Date(alert.createdAt).toLocaleDateString()}
+                  <Text size="xs" mt={2} style={{ color: '#5c5f66' }}>
+                    {new Date(alert.createdAt).toLocaleString()}
                   </Text>
-                </Group>
-              </Paper>
-            ))}
-          </Stack>
+                </Timeline.Item>
+              ))}
+            </Timeline>
+          </Paper>
         </>
       )}
 
+      {/* Submit Report Modal */}
       <Modal
         opened={reportOpen}
         onClose={() => setReportOpen(false)}
         title="Submit ISP Report"
+        radius="lg"
         styles={{
-          content: { backgroundColor: '#0b1121', borderColor: '#1a2940' },
-          header: { backgroundColor: '#0b1121' },
-          title: { color: '#d0d7e3' },
+          content: {
+            backgroundColor: '#1E2128',
+            border: '1px solid rgba(255,255,255,0.06)',
+          },
+          header: {
+            backgroundColor: '#1E2128',
+            borderBottom: '1px solid rgba(255,255,255,0.06)',
+          },
+          title: { color: '#C1C2C5', fontWeight: 600 },
+          close: { color: '#909296' },
         }}
       >
-        <Stack gap="md">
+        <Stack gap="md" mt="md">
           <TextInput
             label="ISP Name"
             placeholder="Rostelecom"
@@ -302,14 +393,7 @@ export function IntelligencePage() {
             onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
               setReportISP(e.currentTarget.value)
             }
-            styles={{
-              input: {
-                backgroundColor: '#060a12',
-                borderColor: '#1a2940',
-                color: '#d0d7e3',
-              },
-              label: { color: '#97a8c2' },
-            }}
+            styles={inputStyles}
           />
           <Select
             label="Protocol"
@@ -318,13 +402,12 @@ export function IntelligencePage() {
             value={reportProtocol}
             onChange={setReportProtocol}
             styles={{
-              input: {
-                backgroundColor: '#060a12',
-                borderColor: '#1a2940',
-                color: '#d0d7e3',
+              ...inputStyles,
+              dropdown: {
+                backgroundColor: '#1E2128',
+                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: 10,
               },
-              label: { color: '#97a8c2' },
-              dropdown: { backgroundColor: '#111b30', borderColor: '#1a2940' },
             }}
           />
           <Select
@@ -334,13 +417,12 @@ export function IntelligencePage() {
             value={reportStatus}
             onChange={setReportStatus}
             styles={{
-              input: {
-                backgroundColor: '#060a12',
-                borderColor: '#1a2940',
-                color: '#d0d7e3',
+              ...inputStyles,
+              dropdown: {
+                backgroundColor: '#1E2128',
+                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: 10,
               },
-              label: { color: '#97a8c2' },
-              dropdown: { backgroundColor: '#111b30', borderColor: '#1a2940' },
             }}
           />
           <Button
@@ -348,6 +430,8 @@ export function IntelligencePage() {
             gradient={{ from: 'teal', to: 'cyan' }}
             loading={submitting}
             onClick={handleSubmitReport}
+            radius="md"
+            fullWidth
           >
             Submit Report
           </Button>

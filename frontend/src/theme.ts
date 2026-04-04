@@ -2,20 +2,14 @@ import { createTheme } from '@mantine/core';
 
 export const theme = createTheme({
   primaryColor: 'teal',
-  fontFamily: 'Outfit, sans-serif',
-  fontFamilyMonospace: 'JetBrains Mono, monospace',
+  fontFamily: "'Outfit', sans-serif",
+  fontFamilyMonospace: "'JetBrains Mono', monospace",
   colors: {
     dark: [
-      '#d0d7e3',
-      '#97a8c2',
-      '#556880',
-      '#2a3a52',
-      '#1a2940',
-      '#111b30',
-      '#0b1121',
-      '#060a12',
-      '#040810',
-      '#030508',
+      '#C1C2C5', '#A6A7AB', '#909296', '#5c5f66',
+      '#373A40', '#2C2E33', '#1E2128', '#161B23',
+      '#0F1318', '#0A0E14',
     ],
   },
+  defaultRadius: 'md',
 });

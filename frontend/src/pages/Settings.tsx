@@ -1,7 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   Stack,
-  Title,
   Paper,
   Group,
   Text,
@@ -10,7 +9,6 @@ import {
   Button,
   SimpleGrid,
   PasswordInput,
-  Divider,
   NumberInput,
   Box,
   Loader,
@@ -28,6 +26,45 @@ import {
 import { getSettings, updateSettings } from '../api/settings';
 import { changePassword } from '../api/auth';
 import type { Settings } from '../types';
+
+const cardStyle = {
+  backgroundColor: '#1E2128',
+  border: '1px solid rgba(255,255,255,0.06)',
+  borderRadius: 12,
+};
+
+const inputStyles = {
+  input: {
+    backgroundColor: '#161B23',
+    border: '1px solid rgba(255,255,255,0.06)',
+    color: '#C1C2C5',
+    borderRadius: 8,
+  },
+  label: {
+    color: '#909296',
+    fontSize: '12px',
+    fontWeight: 600,
+    marginBottom: 4,
+  },
+};
+
+function SectionTitle({ children }: { children: string }) {
+  return (
+    <Text
+      size="11px"
+      fw={700}
+      mt="lg"
+      mb={8}
+      style={{
+        color: '#5c5f66',
+        letterSpacing: '1.5px',
+        textTransform: 'uppercase',
+      }}
+    >
+      {children}
+    </Text>
+  );
+}
 
 export function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -122,25 +159,18 @@ export function SettingsPage() {
     );
   }
 
-  const inputStyles = {
-    input: {
-      backgroundColor: '#060a12',
-      borderColor: '#1a2940',
-      color: '#d0d7e3',
-    },
-    label: { color: '#97a8c2' },
-  };
-
   return (
-    <Stack gap="lg">
-      <Group justify="space-between">
-        <Title order={2} style={{ color: '#d0d7e3' }}>
-          Settings
-        </Title>
+    <Stack gap={0}>
+      {/* Header */}
+      <Group justify="space-between" mb="lg">
+        <Text size="22px" fw={700} style={{ color: '#C1C2C5' }}>
+          Configuration
+        </Text>
         <Button
           leftSection={<IconDeviceFloppy size={16} />}
           variant="gradient"
           gradient={{ from: 'teal', to: 'cyan' }}
+          radius="md"
           loading={saving}
           onClick={handleSave}
         >
@@ -148,38 +178,57 @@ export function SettingsPage() {
         </Button>
       </Group>
 
-      <TextInput
-        label="Server IP"
-        placeholder="Your server public IP"
-        leftSection={<IconNetwork size={16} />}
-        value={settings.serverIp ?? ''}
-        onChange={(e) => update('serverIp', e.currentTarget.value)}
-        styles={inputStyles}
-      />
+      {/* Server IP */}
+      <Paper p="lg" style={cardStyle} mb="md">
+        <TextInput
+          label="Server IP"
+          placeholder="Your server public IP"
+          leftSection={<IconNetwork size={16} color="#909296" />}
+          value={settings.serverIp ?? ''}
+          onChange={(e) => update('serverIp', e.currentTarget.value)}
+          styles={inputStyles}
+        />
+      </Paper>
 
-      <SimpleGrid cols={{ base: 1, md: 3 }}>
+      {/* Protocol cards */}
+      <SectionTitle>Protocols</SectionTitle>
+      <SimpleGrid cols={{ base: 1, md: 3 }} spacing="md">
+        {/* Reality */}
         <Paper
-          p="md"
-          radius="md"
           style={{
-            backgroundColor: '#0b1121',
-            border: `1px solid ${settings.realityEnabled ? '#00e8c6' : '#1a2940'}`,
+            ...cardStyle,
+            overflow: 'hidden',
+            borderColor: settings.realityEnabled
+              ? 'rgba(32,201,151,0.25)'
+              : 'rgba(255,255,255,0.06)',
           }}
         >
-          <Group justify="space-between" mb="md">
-            <Group gap="xs">
-              <IconShieldCheck size={20} color="#00e8c6" />
-              <Text fw={600}>VLESS+Reality</Text>
+          <Box
+            px="lg"
+            py="sm"
+            style={{
+              background: settings.realityEnabled
+                ? 'linear-gradient(135deg, rgba(32,201,151,0.12), rgba(32,201,151,0.04))'
+                : 'rgba(255,255,255,0.02)',
+              borderBottom: '1px solid rgba(255,255,255,0.06)',
+            }}
+          >
+            <Group justify="space-between">
+              <Group gap={8}>
+                <IconShieldCheck size={18} color={settings.realityEnabled ? '#20C997' : '#5c5f66'} />
+                <Text fw={600} size="sm" style={{ color: settings.realityEnabled ? '#C1C2C5' : '#5c5f66' }}>
+                  VLESS+Reality
+                </Text>
+              </Group>
+              <Switch
+                checked={settings.realityEnabled}
+                onChange={(e) => update('realityEnabled', e.currentTarget.checked)}
+                color="teal"
+                size="sm"
+              />
             </Group>
-            <Switch
-              checked={settings.realityEnabled}
-              onChange={(e) =>
-                update('realityEnabled', e.currentTarget.checked)
-              }
-              color="teal"
-            />
-          </Group>
-          <Stack gap="sm">
+          </Box>
+          <Stack gap="sm" p="lg">
             <NumberInput
               label="Port"
               value={settings.realityPort}
@@ -213,28 +262,42 @@ export function SettingsPage() {
           </Stack>
         </Paper>
 
+        {/* WebSocket */}
         <Paper
-          p="md"
-          radius="md"
           style={{
-            backgroundColor: '#0b1121',
-            border: `1px solid ${settings.wsEnabled ? '#339af0' : '#1a2940'}`,
+            ...cardStyle,
+            overflow: 'hidden',
+            borderColor: settings.wsEnabled
+              ? 'rgba(51,154,240,0.25)'
+              : 'rgba(255,255,255,0.06)',
           }}
         >
-          <Group justify="space-between" mb="md">
-            <Group gap="xs">
-              <IconWorld size={20} color="#339af0" />
-              <Text fw={600}>VLESS+WebSocket</Text>
+          <Box
+            px="lg"
+            py="sm"
+            style={{
+              background: settings.wsEnabled
+                ? 'linear-gradient(135deg, rgba(51,154,240,0.12), rgba(51,154,240,0.04))'
+                : 'rgba(255,255,255,0.02)',
+              borderBottom: '1px solid rgba(255,255,255,0.06)',
+            }}
+          >
+            <Group justify="space-between">
+              <Group gap={8}>
+                <IconWorld size={18} color={settings.wsEnabled ? '#339AF0' : '#5c5f66'} />
+                <Text fw={600} size="sm" style={{ color: settings.wsEnabled ? '#C1C2C5' : '#5c5f66' }}>
+                  VLESS+WebSocket
+                </Text>
+              </Group>
+              <Switch
+                checked={settings.wsEnabled}
+                onChange={(e) => update('wsEnabled', e.currentTarget.checked)}
+                color="blue"
+                size="sm"
+              />
             </Group>
-            <Switch
-              checked={settings.wsEnabled}
-              onChange={(e) =>
-                update('wsEnabled', e.currentTarget.checked)
-              }
-              color="blue"
-            />
-          </Group>
-          <Stack gap="sm">
+          </Box>
+          <Stack gap="sm" p="lg">
             <NumberInput
               label="Port"
               value={settings.wsPort}
@@ -256,28 +319,42 @@ export function SettingsPage() {
           </Stack>
         </Paper>
 
+        {/* Shadowsocks */}
         <Paper
-          p="md"
-          radius="md"
           style={{
-            backgroundColor: '#0b1121',
-            border: `1px solid ${settings.ssEnabled ? '#be4bdb' : '#1a2940'}`,
+            ...cardStyle,
+            overflow: 'hidden',
+            borderColor: settings.ssEnabled
+              ? 'rgba(132,94,247,0.25)'
+              : 'rgba(255,255,255,0.06)',
           }}
         >
-          <Group justify="space-between" mb="md">
-            <Group gap="xs">
-              <IconLock size={20} color="#be4bdb" />
-              <Text fw={600}>Shadowsocks</Text>
+          <Box
+            px="lg"
+            py="sm"
+            style={{
+              background: settings.ssEnabled
+                ? 'linear-gradient(135deg, rgba(132,94,247,0.12), rgba(132,94,247,0.04))'
+                : 'rgba(255,255,255,0.02)',
+              borderBottom: '1px solid rgba(255,255,255,0.06)',
+            }}
+          >
+            <Group justify="space-between">
+              <Group gap={8}>
+                <IconLock size={18} color={settings.ssEnabled ? '#845EF7' : '#5c5f66'} />
+                <Text fw={600} size="sm" style={{ color: settings.ssEnabled ? '#C1C2C5' : '#5c5f66' }}>
+                  Shadowsocks
+                </Text>
+              </Group>
+              <Switch
+                checked={settings.ssEnabled}
+                onChange={(e) => update('ssEnabled', e.currentTarget.checked)}
+                color="grape"
+                size="sm"
+              />
             </Group>
-            <Switch
-              checked={settings.ssEnabled}
-              onChange={(e) =>
-                update('ssEnabled', e.currentTarget.checked)
-              }
-              color="grape"
-            />
-          </Group>
-          <Stack gap="sm">
+          </Box>
+          <Stack gap="sm" p="lg">
             <NumberInput
               label="Port"
               value={settings.ssPort}
@@ -300,42 +377,70 @@ export function SettingsPage() {
         </Paper>
       </SimpleGrid>
 
-      <Title order={4} style={{ color: '#d0d7e3' }} mt="sm">
-        Features
-      </Title>
-      <Paper
-        p="md"
-        radius="md"
-        style={{
-          backgroundColor: '#0b1121',
-          border: '1px solid #1a2940',
-        }}
-      >
-        <SimpleGrid cols={{ base: 1, sm: 3 }}>
+      {/* Features */}
+      <SectionTitle>Features</SectionTitle>
+      <Paper p="lg" style={cardStyle}>
+        <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="xl">
           <Group justify="space-between">
-            <Group gap="xs">
-              <IconFilter size={18} color="#00e8c6" />
-              <Text size="sm">Split Tunneling</Text>
+            <Group gap={8}>
+              <Box
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  backgroundColor: 'rgba(32,201,151,0.1)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <IconFilter size={16} color="#20C997" />
+              </Box>
+              <Box>
+                <Text size="sm" fw={500} style={{ color: '#C1C2C5' }}>
+                  Split Tunneling
+                </Text>
+                <Text size="xs" style={{ color: '#5c5f66' }}>
+                  Route traffic selectively
+                </Text>
+              </Box>
             </Group>
             <Switch
               checked={settings.splitTunneling}
-              onChange={(e) =>
-                update('splitTunneling', e.currentTarget.checked)
-              }
+              onChange={(e) => update('splitTunneling', e.currentTarget.checked)}
               color="teal"
+              size="sm"
             />
           </Group>
           <Group justify="space-between">
-            <Group gap="xs">
-              <IconShieldOff size={18} color="#ff6b6b" />
-              <Text size="sm">Ad Blocking</Text>
+            <Group gap={8}>
+              <Box
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  backgroundColor: 'rgba(255,107,107,0.1)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <IconShieldOff size={16} color="#ff6b6b" />
+              </Box>
+              <Box>
+                <Text size="sm" fw={500} style={{ color: '#C1C2C5' }}>
+                  Ad Blocking
+                </Text>
+                <Text size="xs" style={{ color: '#5c5f66' }}>
+                  Block ads and trackers
+                </Text>
+              </Box>
             </Group>
             <Switch
               checked={settings.adBlocking}
-              onChange={(e) =>
-                update('adBlocking', e.currentTarget.checked)
-              }
+              onChange={(e) => update('adBlocking', e.currentTarget.checked)}
               color="teal"
+              size="sm"
             />
           </Group>
           <TextInput
@@ -343,26 +448,16 @@ export function SettingsPage() {
             placeholder="cdn.example.com"
             value={settings.cdnDomain ?? ''}
             onChange={(e) => update('cdnDomain', e.currentTarget.value)}
-            size="xs"
+            size="sm"
             styles={inputStyles}
           />
         </SimpleGrid>
       </Paper>
 
-      <Divider color="#1a2940" />
-
-      <Title order={4} style={{ color: '#d0d7e3' }}>
-        Admin
-      </Title>
-      <Paper
-        p="md"
-        radius="md"
-        style={{
-          backgroundColor: '#0b1121',
-          border: '1px solid #1a2940',
-        }}
-      >
-        <Group align="end">
+      {/* Admin / Password */}
+      <SectionTitle>Admin</SectionTitle>
+      <Paper p="lg" style={cardStyle}>
+        <Group align="end" gap="md">
           <PasswordInput
             label="Current Password"
             value={currentPassword}
@@ -380,8 +475,15 @@ export function SettingsPage() {
           <Button
             variant="light"
             color="teal"
+            radius="md"
             loading={changingPassword}
             onClick={handleChangePassword}
+            styles={{
+              root: {
+                border: '1px solid rgba(32,201,151,0.2)',
+                height: 36,
+              },
+            }}
           >
             Change
           </Button>
