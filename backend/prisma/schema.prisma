@@ -8,10 +8,35 @@ generator client {
 }
 
 model Admin {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  password  String
-  createdAt DateTime @default(now())
+  id            String         @id @default(uuid())
+  email         String         @unique
+  password      String
+  createdAt     DateTime       @default(now())
+  passkeys      Passkey[]
+  oauthAccounts OAuthAccount[]
+}
+
+model Passkey {
+  id           String   @id @default(uuid())
+  adminId      String
+  credentialId String   @unique
+  publicKey    Bytes
+  counter      Int      @default(0)
+  transports   String[]
+  createdAt    DateTime @default(now())
+  admin        Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+}
+
+model OAuthAccount {
+  id         String   @id @default(uuid())
+  adminId    String
+  provider   String
+  providerId String
+  email      String?
+  createdAt  DateTime @default(now())
+  admin      Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerId])
 }
 
 model User {

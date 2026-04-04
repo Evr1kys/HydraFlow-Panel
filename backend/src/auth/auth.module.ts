@@ -6,6 +6,8 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
 import { SessionsService } from './sessions.service';
+import { OAuthModule } from './oauth/oauth.module';
+import { PasskeysModule } from './passkeys/passkeys.module';
 
 @Module({
   imports: [
@@ -18,6 +20,8 @@ import { SessionsService } from './sessions.service';
         signOptions: { expiresIn: '24h' },
       }),
     }),
+    OAuthModule,
+    PasskeysModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, SessionsService],

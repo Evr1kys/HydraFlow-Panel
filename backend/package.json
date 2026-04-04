@@ -20,6 +20,8 @@
     "@nestjs/passport": "^10.0.3",
     "@nestjs/platform-express": "^10.3.0",
     "@prisma/client": "^5.8.0",
+    "@simplewebauthn/server": "^13.3.0",
+    "arctic": "^3.7.0",
     "bcrypt": "^5.1.1",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.0",

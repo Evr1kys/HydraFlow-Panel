@@ -12,6 +12,8 @@ import {
   NumberInput,
   Box,
   Loader,
+  Badge,
+  Table,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import {
@@ -22,9 +24,24 @@ import {
   IconNetwork,
   IconFilter,
   IconShieldOff,
+  IconFingerprint,
+  IconPlus,
+  IconTrash,
+  IconBrandGithub,
+  IconBrandTelegram,
+  IconUnlink,
 } from '@tabler/icons-react';
 import { getSettings, updateSettings } from '../api/settings';
-import { changePassword } from '../api/auth';
+import {
+  changePassword,
+  getPasskeyRegisterOptions,
+  verifyPasskeyRegister,
+  listPasskeys,
+  deletePasskey,
+  getLinkedOAuthAccounts,
+  unlinkOAuthAccount,
+} from '../api/auth';
+import type { PasskeyInfo, OAuthAccount } from '../api/auth';
 import type { Settings } from '../types';
 
 const cardStyle = {
@@ -77,6 +94,27 @@ function SectionTitle({ children }: { children: string }) {
   );
 }
 
+function YandexIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M13.32 21.634h2.504V2.366h-3.39c-4.108 0-6.26 2.121-6.26 5.207 0 2.583 1.31 4.052 3.576 5.575l-3.997 8.486h2.715l4.329-9.186-1.26-.848c-1.848-1.26-2.818-2.387-2.818-4.349 0-1.92 1.31-3.243 3.63-3.243h.97v17.626z" />
+    </svg>
+  );
+}
+
+function providerIcon(provider: string) {
+  switch (provider) {
+    case 'github':
+      return <IconBrandGithub size={16} />;
+    case 'telegram':
+      return <IconBrandTelegram size={16} />;
+    case 'yandex':
+      return <YandexIcon size={16} />;
+    default:
+      return null;
+  }
+}
+
 export function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -84,6 +122,13 @@ export function SettingsPage() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [changingPassword, setChangingPassword] = useState(false);
+
+  // Passkeys
+  const [passkeys, setPasskeys] = useState<PasskeyInfo[]>([]);
+  const [addingPasskey, setAddingPasskey] = useState(false);
+
+  // OAuth accounts
+  const [oauthAccounts, setOauthAccounts] = useState<OAuthAccount[]>([]);
 
   const fetchSettings = useCallback(async () => {
     try {
@@ -100,9 +145,29 @@ export function SettingsPage() {
     }
   }, []);
 
+  const fetchPasskeys = useCallback(async () => {
+    try {
+      const data = await listPasskeys();
+      setPasskeys(data);
+    } catch {
+      // passkeys not available yet, ignore
+    }
+  }, []);
+
+  const fetchOAuthAccounts = useCallback(async () => {
+    try {
+      const data = await getLinkedOAuthAccounts();
+      setOauthAccounts(data);
+    } catch {
+      // OAuth accounts not available yet, ignore
+    }
+  }, []);
+
   useEffect(() => {
     fetchSettings();
-  }, [fetchSettings]);
+    fetchPasskeys();
+    fetchOAuthAccounts();
+  }, [fetchSettings, fetchPasskeys, fetchOAuthAccounts]);
 
   const handleSave = async () => {
     if (!settings) return;
@@ -147,6 +212,66 @@ export function SettingsPage() {
       });
     } finally {
       setChangingPassword(false);
+    }
+  };
+
+  const handleAddPasskey = async () => {
+    setAddingPasskey(true);
+    try {
+      const { startRegistration } = await import('@simplewebauthn/browser');
+      const options = await getPasskeyRegisterOptions();
+      const credential = await startRegistration({ optionsJSON: options as Parameters<typeof startRegistration>[0]['optionsJSON'] });
+      await verifyPasskeyRegister(credential);
+      notifications.show({
+        title: 'Success',
+        message: 'Passkey registered successfully',
+        color: 'teal',
+      });
+      fetchPasskeys();
+    } catch {
+      notifications.show({
+        title: 'Error',
+        message: 'Failed to register passkey',
+        color: 'red',
+      });
+    } finally {
+      setAddingPasskey(false);
+    }
+  };
+
+  const handleDeletePasskey = async (id: string) => {
+    try {
+      await deletePasskey(id);
+      notifications.show({
+        title: 'Success',
+        message: 'Passkey deleted',
+        color: 'teal',
+      });
+      fetchPasskeys();
+    } catch {
+      notifications.show({
+        title: 'Error',
+        message: 'Failed to delete passkey',
+        color: 'red',
+      });
+    }
+  };
+
+  const handleUnlinkOAuth = async (accountId: string) => {
+    try {
+      await unlinkOAuthAccount(accountId);
+      notifications.show({
+        title: 'Success',
+        message: 'OAuth account unlinked',
+        color: 'teal',
+      });
+      fetchOAuthAccounts();
+    } catch {
+      notifications.show({
+        title: 'Error',
+        message: 'Failed to unlink account',
+        color: 'red',
+      });
     }
   };
 
@@ -499,6 +624,205 @@ export function SettingsPage() {
             Change
           </Button>
         </Group>
+      </Paper>
+
+      {/* Passkeys */}
+      <SectionTitle>Passkeys</SectionTitle>
+      <Paper p="lg" style={cardStyle}>
+        <Group justify="space-between" mb="md">
+          <Group gap={8}>
+            <IconFingerprint size={20} color="#20C997" />
+            <Box>
+              <Text size="sm" fw={600} style={{ color: '#C1C2C5' }}>
+                WebAuthn Passkeys
+              </Text>
+              <Text size="xs" style={{ color: '#5c5f66' }}>
+                Use fingerprint, face, or security key to sign in
+              </Text>
+            </Box>
+          </Group>
+          <Button
+            leftSection={<IconPlus size={14} />}
+            variant="light"
+            color="teal"
+            radius="md"
+            size="sm"
+            loading={addingPasskey}
+            onClick={handleAddPasskey}
+            styles={{
+              root: { border: '1px solid rgba(32,201,151,0.2)' },
+            }}
+          >
+            Add Passkey
+          </Button>
+        </Group>
+
+        {passkeys.length === 0 ? (
+          <Text size="sm" style={{ color: '#5c5f66' }}>
+            No passkeys registered yet. Add one to enable passwordless login.
+          </Text>
+        ) : (
+          <Table
+            highlightOnHover
+            styles={{
+              table: { borderCollapse: 'separate', borderSpacing: 0 },
+              th: {
+                color: '#909296',
+                fontSize: '11px',
+                fontWeight: 700,
+                textTransform: 'uppercase' as const,
+                letterSpacing: '1px',
+                borderBottom: '1px solid rgba(255,255,255,0.06)',
+                padding: '8px 12px',
+              },
+              td: {
+                color: '#C1C2C5',
+                fontSize: '13px',
+                borderBottom: '1px solid rgba(255,255,255,0.04)',
+                padding: '8px 12px',
+              },
+              tr: {
+                '&:hover': { backgroundColor: 'rgba(255,255,255,0.02)' },
+              },
+            }}
+          >
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Credential</Table.Th>
+                <Table.Th>Transports</Table.Th>
+                <Table.Th>Created</Table.Th>
+                <Table.Th />
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {passkeys.map((pk) => (
+                <Table.Tr key={pk.id}>
+                  <Table.Td>
+                    <Text size="xs" style={{ fontFamily: 'monospace', color: '#909296' }}>
+                      {pk.credentialId.slice(0, 16)}...
+                    </Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Group gap={4}>
+                      {pk.transports.map((t) => (
+                        <Badge
+                          key={t}
+                          size="xs"
+                          variant="outline"
+                          color="teal"
+                        >
+                          {t}
+                        </Badge>
+                      ))}
+                    </Group>
+                  </Table.Td>
+                  <Table.Td>
+                    {new Date(pk.createdAt).toLocaleDateString()}
+                  </Table.Td>
+                  <Table.Td>
+                    <Button
+                      size="xs"
+                      variant="subtle"
+                      color="red"
+                      leftSection={<IconTrash size={14} />}
+                      onClick={() => handleDeletePasskey(pk.id)}
+                    >
+                      Delete
+                    </Button>
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        )}
+      </Paper>
+
+      {/* OAuth Accounts */}
+      <SectionTitle>Linked OAuth Accounts</SectionTitle>
+      <Paper p="lg" style={cardStyle}>
+        <Group gap={8} mb="md">
+          <Box>
+            <Text size="sm" fw={600} style={{ color: '#C1C2C5' }}>
+              External Accounts
+            </Text>
+            <Text size="xs" style={{ color: '#5c5f66' }}>
+              Link OAuth accounts to enable social login (Telegram, GitHub, Yandex)
+            </Text>
+          </Box>
+        </Group>
+
+        {oauthAccounts.length === 0 ? (
+          <Text size="sm" style={{ color: '#5c5f66' }}>
+            No OAuth accounts linked. Log in via OAuth to automatically link your account.
+          </Text>
+        ) : (
+          <Table
+            highlightOnHover
+            styles={{
+              table: { borderCollapse: 'separate', borderSpacing: 0 },
+              th: {
+                color: '#909296',
+                fontSize: '11px',
+                fontWeight: 700,
+                textTransform: 'uppercase' as const,
+                letterSpacing: '1px',
+                borderBottom: '1px solid rgba(255,255,255,0.06)',
+                padding: '8px 12px',
+              },
+              td: {
+                color: '#C1C2C5',
+                fontSize: '13px',
+                borderBottom: '1px solid rgba(255,255,255,0.04)',
+                padding: '8px 12px',
+              },
+              tr: {
+                '&:hover': { backgroundColor: 'rgba(255,255,255,0.02)' },
+              },
+            }}
+          >
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Provider</Table.Th>
+                <Table.Th>Email</Table.Th>
+                <Table.Th>Linked</Table.Th>
+                <Table.Th />
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {oauthAccounts.map((acc) => (
+                <Table.Tr key={acc.id}>
+                  <Table.Td>
+                    <Group gap={6}>
+                      {providerIcon(acc.provider)}
+                      <Text size="sm" tt="capitalize">
+                        {acc.provider}
+                      </Text>
+                    </Group>
+                  </Table.Td>
+                  <Table.Td>
+                    <Text size="xs" style={{ color: '#909296' }}>
+                      {acc.email ?? '-'}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td>
+                    {new Date(acc.createdAt).toLocaleDateString()}
+                  </Table.Td>
+                  <Table.Td>
+                    <Button
+                      size="xs"
+                      variant="subtle"
+                      color="red"
+                      leftSection={<IconUnlink size={14} />}
+                      onClick={() => handleUnlinkOAuth(acc.id)}
+                    >
+                      Unlink
+                    </Button>
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        )}
       </Paper>
     </Stack>
   );

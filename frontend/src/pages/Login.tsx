@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Card,
   TextInput,
@@ -9,15 +9,40 @@ import {
   Stack,
   Center,
   Box,
+  Divider,
+  Group,
+  Tooltip,
+  ActionIcon,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconMail, IconLock } from '@tabler/icons-react';
-import { login } from '../api/auth';
+import {
+  IconMail,
+  IconLock,
+  IconBrandTelegram,
+  IconBrandGithub,
+  IconFingerprint,
+} from '@tabler/icons-react';
+import {
+  login,
+  getOAuthProviders,
+  telegramLogin,
+  getPasskeyLoginOptions,
+  verifyPasskeyLogin,
+} from '../api/auth';
+import type { OAuthProvider } from '../api/auth';
 import { useAuth } from '../components/AuthProvider';
+
+// Yandex icon (not in @tabler/icons)
+function YandexIcon({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M13.32 21.634h2.504V2.366h-3.39c-4.108 0-6.26 2.121-6.26 5.207 0 2.583 1.31 4.052 3.576 5.575l-3.997 8.486h2.715l4.329-9.186-1.26-.848c-1.848-1.26-2.818-2.387-2.818-4.349 0-1.92 1.31-3.243 3.63-3.243h.97v17.626z" />
+    </svg>
+  );
+}
 
 // CSS-only constellation particles
 function ConstellationBackground() {
-  // Static positioned dots with CSS animation
   const particles = [
     { top: '10%', left: '15%', size: 2, delay: 0 },
     { top: '20%', left: '80%', size: 3, delay: 0.5 },
@@ -86,8 +111,37 @@ export function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [passkeyLoading, setPasskeyLoading] = useState(false);
+  const [providers, setProviders] = useState<OAuthProvider[]>([]);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { setToken } = useAuth();
+
+  // Handle OAuth callback token from URL
+  useEffect(() => {
+    const token = searchParams.get('token');
+    if (token) {
+      setToken(token);
+      navigate('/', { replace: true });
+    }
+    const error = searchParams.get('error');
+    if (error) {
+      notifications.show({
+        title: 'OAuth failed',
+        message: 'Authentication with external provider failed',
+        color: 'red',
+      });
+    }
+  }, [searchParams, setToken, navigate]);
+
+  // Load enabled OAuth providers
+  useEffect(() => {
+    getOAuthProviders()
+      .then(setProviders)
+      .catch(() => {
+        // OAuth providers endpoint not available, ignore
+      });
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -116,6 +170,49 @@ export function LoginPage() {
       setLoading(false);
     }
   };
+
+  const handleTelegramLogin = async () => {
+    // Telegram Login Widget opens a popup; we provide a callback
+    const botName = providers.find((p) => p.provider === 'telegram');
+    if (!botName) return;
+
+    notifications.show({
+      title: 'Telegram Login',
+      message: 'Telegram Login Widget requires the bot widget to be embedded. Use the redirect flow.',
+      color: 'blue',
+    });
+  };
+
+  const handleGitHubLogin = () => {
+    window.location.href = '/api/auth/oauth/github';
+  };
+
+  const handleYandexLogin = () => {
+    window.location.href = '/api/auth/oauth/yandex';
+  };
+
+  const handlePasskeyLogin = async () => {
+    setPasskeyLoading(true);
+    try {
+      const { startAuthentication } = await import('@simplewebauthn/browser');
+      const options = await getPasskeyLoginOptions();
+      const credential = await startAuthentication({ optionsJSON: options as Parameters<typeof startAuthentication>[0]['optionsJSON'] });
+      const token = await verifyPasskeyLogin(credential);
+      setToken(token);
+      navigate('/');
+    } catch {
+      notifications.show({
+        title: 'Passkey login failed',
+        message: 'Could not authenticate with passkey',
+        color: 'red',
+      });
+    } finally {
+      setPasskeyLoading(false);
+    }
+  };
+
+  const enabledProviders = providers.filter((p) => p.enabled);
+  const hasOAuth = enabledProviders.length > 0;
 
   return (
     <Box
@@ -242,6 +339,122 @@ export function LoginPage() {
               >
                 Sign in
               </Button>
+
+              {/* Passkey login */}
+              <Button
+                fullWidth
+                variant="outline"
+                color="gray"
+                radius="md"
+                loading={passkeyLoading}
+                onClick={handlePasskeyLogin}
+                leftSection={<IconFingerprint size={18} />}
+                styles={{
+                  root: {
+                    height: 42,
+                    borderColor: 'rgba(255,255,255,0.1)',
+                    color: '#909296',
+                    '&:hover': {
+                      backgroundColor: 'rgba(255,255,255,0.04)',
+                      borderColor: 'rgba(255,255,255,0.15)',
+                    },
+                  },
+                }}
+              >
+                Sign in with Passkey
+              </Button>
+
+              {/* OAuth providers */}
+              {hasOAuth && (
+                <>
+                  <Divider
+                    label="or continue with"
+                    labelPosition="center"
+                    styles={{
+                      label: { color: '#5c5f66', fontSize: '11px' },
+                      root: { borderColor: 'rgba(255,255,255,0.06)' },
+                    }}
+                  />
+
+                  <Group justify="center" gap="md">
+                    {enabledProviders.map((p) => {
+                      if (p.provider === 'telegram') {
+                        return (
+                          <Tooltip label="Telegram" key="telegram">
+                            <ActionIcon
+                              size={44}
+                              radius="md"
+                              variant="outline"
+                              onClick={handleTelegramLogin}
+                              styles={{
+                                root: {
+                                  borderColor: 'rgba(255,255,255,0.08)',
+                                  color: '#2AABEE',
+                                  '&:hover': {
+                                    backgroundColor: 'rgba(42,171,238,0.1)',
+                                    borderColor: 'rgba(42,171,238,0.3)',
+                                  },
+                                },
+                              }}
+                            >
+                              <IconBrandTelegram size={22} />
+                            </ActionIcon>
+                          </Tooltip>
+                        );
+                      }
+                      if (p.provider === 'github') {
+                        return (
+                          <Tooltip label="GitHub" key="github">
+                            <ActionIcon
+                              size={44}
+                              radius="md"
+                              variant="outline"
+                              onClick={handleGitHubLogin}
+                              styles={{
+                                root: {
+                                  borderColor: 'rgba(255,255,255,0.08)',
+                                  color: '#C1C2C5',
+                                  '&:hover': {
+                                    backgroundColor: 'rgba(255,255,255,0.06)',
+                                    borderColor: 'rgba(255,255,255,0.2)',
+                                  },
+                                },
+                              }}
+                            >
+                              <IconBrandGithub size={22} />
+                            </ActionIcon>
+                          </Tooltip>
+                        );
+                      }
+                      if (p.provider === 'yandex') {
+                        return (
+                          <Tooltip label="Yandex" key="yandex">
+                            <ActionIcon
+                              size={44}
+                              radius="md"
+                              variant="outline"
+                              onClick={handleYandexLogin}
+                              styles={{
+                                root: {
+                                  borderColor: 'rgba(255,255,255,0.08)',
+                                  color: '#FC3F1D',
+                                  '&:hover': {
+                                    backgroundColor: 'rgba(252,63,29,0.1)',
+                                    borderColor: 'rgba(252,63,29,0.3)',
+                                  },
+                                },
+                              }}
+                            >
+                              <YandexIcon size={20} />
+                            </ActionIcon>
+                          </Tooltip>
+                        );
+                      }
+                      return null;
+                    })}
+                  </Group>
+                </>
+              )}
 
               <Text ta="center" size="xs" style={{ color: '#373A40' }}>
                 HydraFlow Panel v2.0.0
