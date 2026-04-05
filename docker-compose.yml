@@ -2,6 +2,7 @@ version: '3.8'
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB: hydraflow
       POSTGRES_USER: hydraflow
@@ -14,21 +15,56 @@ services:
       timeout: 3s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   backend:
     build: ./backend
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       DATABASE_URL: postgresql://hydraflow:${DB_PASSWORD:-hydraflow_secret}@postgres:5432/hydraflow
+      REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:-change_this_secret}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@hydraflow.dev}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      CORS_ORIGIN: ${CORS_ORIGIN:-https://panel.hydraflow.xyz,http://localhost:5173}
+      SERVER_PUBLIC_IP: ${SERVER_PUBLIC_IP:-}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://panel.hydraflow.xyz}
+      # Telegram bot (optional)
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
+      TELEGRAM_ADMIN_ID: ${TELEGRAM_ADMIN_ID:-}
+      BOT_SHOP_ENABLED: ${BOT_SHOP_ENABLED:-false}
+      BOT_SHOP_MODE: ${BOT_SHOP_MODE:-standalone}
+      # Payment providers (optional)
+      YOOKASSA_SHOP_ID: ${YOOKASSA_SHOP_ID:-}
+      YOOKASSA_SECRET_KEY: ${YOOKASSA_SECRET_KEY:-}
+      CRYPTOBOT_TOKEN: ${CRYPTOBOT_TOKEN:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      NOWPAYMENTS_API_KEY: ${NOWPAYMENTS_API_KEY:-}
+      NOWPAYMENTS_IPN_SECRET: ${NOWPAYMENTS_IPN_SECRET:-}
+    volumes:
+      - backupdata:/var/backups/hydraflow
     ports:
       - "3100:3000"
 
   frontend:
     build: ./frontend
+    restart: unless-stopped
     depends_on:
       - backend
     ports:
@@ -36,3 +72,5 @@ services:
 
 volumes:
   pgdata:
+  redisdata:
+  backupdata:
