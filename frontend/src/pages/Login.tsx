@@ -123,10 +123,7 @@ export function LoginPage() {
         validators.isNotEmpty(t('validation.required')),
         validators.isEmail(t('validation.email')),
       ),
-      password: validators.combine(
-        validators.isNotEmpty(t('validation.required')),
-        validators.hasLength({ min: 8 }, t('validation.password')),
-      ),
+      password: validators.isNotEmpty(t('validation.required')),
     },
   );
   const { email, password } = loginForm.values;
