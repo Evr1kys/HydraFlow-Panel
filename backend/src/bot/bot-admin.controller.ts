@@ -24,11 +24,11 @@ import { BotPlanService, serializeBotPlan } from './services/bot-plan.service';
 import { BotButtonService } from './services/bot-button.service';
 import { PromoService } from './services/promo.service';
 import { SubscriptionGrantService } from './services/subscription-grant.service';
-import type { CreateBotPlanDto } from './dto/create-bot-plan.dto';
-import type { UpdateBotPlanDto } from './dto/update-bot-plan.dto';
-import type { CreatePromoDto } from './dto/create-promo.dto';
-import type { CreateButtonDto } from './dto/create-button.dto';
-import type { UpdateButtonDto } from './dto/update-button.dto';
+import { CreateBotPlanDto } from './dto/create-bot-plan.dto';
+import { UpdateBotPlanDto } from './dto/update-bot-plan.dto';
+import { CreatePromoDto } from './dto/create-promo.dto';
+import { CreateButtonDto } from './dto/create-button.dto';
+import { UpdateButtonDto } from './dto/update-button.dto';
 
 interface ReorderItem {
   id: string;
