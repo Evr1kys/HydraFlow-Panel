@@ -9,7 +9,7 @@ export class ConfigProfilesService {
 
   async findAll() {
     return this.prisma.configProfile.findMany({
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
     });
   }
 
@@ -84,8 +84,25 @@ export class ConfigProfilesService {
   }
 
   async remove(id: string) {
-    await this.findOne(id);
+    const existing = await this.findOne(id);
+    if (existing.isDefault) {
+      throw new BadRequestException('Cannot delete the default config profile');
+    }
     await this.prisma.configProfile.delete({ where: { id } });
     return { message: 'Config profile deleted' };
+  }
+
+  async setDefault(id: string) {
+    await this.findOne(id);
+    return this.prisma.$transaction(async (tx) => {
+      await tx.configProfile.updateMany({
+        where: { id: { not: id } },
+        data: { isDefault: false },
+      });
+      return tx.configProfile.update({
+        where: { id },
+        data: { isDefault: true },
+      });
+    });
   }
 }

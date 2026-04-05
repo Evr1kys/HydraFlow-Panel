@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
+import { MetricsService } from '../metrics/metrics.service';
 import { SessionsService } from './sessions.service';
 import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
@@ -33,6 +34,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly sessionsService: SessionsService,
+    private readonly metrics: MetricsService,
   ) {}
 
   async login(
@@ -45,12 +47,19 @@ export class AuthService {
     });
 
     if (!admin) {
+      this.metrics.incAuthAttempt('failed');
       throw new UnauthorizedException('Invalid credentials');
     }
 
     const isPasswordValid = await bcrypt.compare(dto.password, admin.password);
     if (!isPasswordValid) {
+      this.metrics.incAuthAttempt('failed');
       throw new UnauthorizedException('Invalid credentials');
+    }
+
+    if (!admin.enabled) {
+      this.metrics.incAuthAttempt('failed');
+      throw new UnauthorizedException('Account disabled');
     }
 
     // Check if 2FA is enabled
@@ -62,15 +71,27 @@ export class AuthService {
       const totp = await getTotpUtils();
       const result = await totp.verify(dto.totpCode, admin.totpSecret);
       if (!result.valid) {
+        this.metrics.incAuthAttempt('failed');
         throw new UnauthorizedException('Invalid 2FA code');
       }
     }
 
-    const payload = { sub: admin.id, email: admin.email };
+    const payload = {
+      sub: admin.id,
+      email: admin.email,
+      role: admin.role,
+      enabled: admin.enabled,
+    };
     const token = this.jwtService.sign(payload);
 
     this.sessionsService.create(admin.id, admin.email, token, userAgent, ip);
 
+    await this.prisma.admin.update({
+      where: { id: admin.id },
+      data: { lastLoginAt: new Date() },
+    });
+
+    this.metrics.incAuthAttempt('success');
     return { token };
   }
 

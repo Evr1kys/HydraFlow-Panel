@@ -230,15 +230,25 @@ export class OAuthService {
     );
   }
 
-  private issueToken(
+  private async issueToken(
     adminId: string,
     email: string,
     userAgent: string,
     ip: string,
-  ): { token: string } {
-    const payload = { sub: adminId, email };
+  ): Promise<{ token: string }> {
+    const admin = await this.prisma.admin.findUnique({ where: { id: adminId } });
+    const payload = {
+      sub: adminId,
+      email,
+      role: admin?.role ?? 'admin',
+      enabled: admin?.enabled ?? true,
+    };
     const token = this.jwtService.sign(payload);
     this.sessionsService.create(adminId, email, token, userAgent, ip);
+    await this.prisma.admin.update({
+      where: { id: adminId },
+      data: { lastLoginAt: new Date() },
+    });
     return { token };
   }
 

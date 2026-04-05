@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Post, Request, UseGuards } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { RegistrationResponseJSON, AuthenticationResponseJSON } from '@simplewebauthn/server';
 import { PasskeysService } from './passkeys.service';
 import { JwtAuthGuard } from '../jwt-auth.guard';
@@ -10,6 +11,7 @@ interface AuthenticatedRequest {
   socket?: { remoteAddress?: string };
 }
 
+@Throttle({ auth: { limit: 5, ttl: 60000 } })
 @Controller('api/auth/passkeys')
 export class PasskeysController {
   constructor(private readonly passkeysService: PasskeysService) {}

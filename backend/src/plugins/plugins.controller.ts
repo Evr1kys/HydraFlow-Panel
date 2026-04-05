@@ -45,10 +45,25 @@ export class PluginsController {
   }
 
   @Post('nodes/:nodeId/plugins/:pluginId/execute')
-  execute(
+  executeOnNode(
     @Param('nodeId') nodeId: string,
     @Param('pluginId') pluginId: string,
   ) {
     return this.pluginsService.execute(nodeId, pluginId);
+  }
+
+  @Post('plugins/:id/execute')
+  execute(@Param('id') id: string) {
+    return this.pluginsService.executeById(id);
+  }
+
+  @Post('plugins/:id/restart')
+  restart(@Param('id') id: string) {
+    return this.pluginsService.restartById(id);
+  }
+
+  @Get('plugins/:id/status')
+  status(@Param('id') id: string) {
+    return this.pluginsService.statusById(id);
   }
 }

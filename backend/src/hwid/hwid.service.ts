@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { MetricsService } from '../metrics/metrics.service';
 
 export interface HwidCheckResult {
   allowed: boolean;
@@ -22,7 +23,10 @@ export interface DeviceInfo {
 
 @Injectable()
 export class HwidService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly metrics: MetricsService,
+  ) {}
 
   async checkDevice(
     userId: string,
@@ -59,6 +63,7 @@ export class HwidService {
     // Check device limit
     const deviceCount = await this.prisma.hwidDevice.count({ where: { userId } });
     if (deviceCount >= user.maxDevices) {
+      this.metrics.incHwidReject();
       return {
         allowed: false,
         deviceId: null,

@@ -21,6 +21,7 @@ import {
   IconBrandGithub,
   IconBrandTelegram,
   IconReceipt,
+  IconCreditCard,
   IconPuzzle,
   IconPlugConnected,
   IconCode,
@@ -28,6 +29,16 @@ import {
   IconChartBar,
   IconFileCode,
   IconDevices,
+  IconDatabaseLeak as IconDatabaseBackup,
+  IconHistory,
+  IconUserShield,
+  IconKey,
+  IconRobot,
+  IconTicket,
+  IconReceiptTax,
+  IconLayoutGrid,
+  IconBroadcast,
+  IconReceipt2,
 } from '@tabler/icons-react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from './AuthProvider';
@@ -75,6 +86,7 @@ const navSections: NavSection[] = [
     items: [
       { labelKey: 'sidebar.devices', icon: IconDevices, path: '/devices' },
       { labelKey: 'sidebar.billing', icon: IconReceipt, path: '/billing' },
+      { labelKey: 'sidebar.userBilling', icon: IconCreditCard, path: '/user-billing' },
       { labelKey: 'sidebar.plugins', icon: IconPuzzle, path: '/plugins' },
       { labelKey: 'sidebar.sessions', icon: IconPlugConnected, path: '/sessions' },
     ],
@@ -86,6 +98,29 @@ const navSections: NavSection[] = [
       { labelKey: 'sidebar.configuration', icon: IconSettings, path: '/settings' },
       { labelKey: 'sidebar.configEditor', icon: IconCode, path: '/config-editor' },
       { labelKey: 'sidebar.migration', icon: IconDatabaseImport, path: '/migration' },
+      { labelKey: 'sidebar.backup', icon: IconDatabaseBackup, path: '/backup' },
+    ],
+  },
+  {
+    labelKey: 'sidebar.security',
+    color: '#FA5252',
+    items: [
+      { labelKey: 'sidebar.admins', icon: IconUserShield, path: '/admins' },
+      { labelKey: 'sidebar.apiKeys', icon: IconKey, path: '/api-keys' },
+      { labelKey: 'sidebar.auditLog', icon: IconHistory, path: '/audit-log' },
+    ],
+  },
+  {
+    labelKey: 'sidebar.bot',
+    color: '#845EF7',
+    items: [
+      { labelKey: 'sidebar.botOverview', icon: IconRobot, path: '/bot' },
+      { labelKey: 'sidebar.botUsers', icon: IconUsers, path: '/bot/users' },
+      { labelKey: 'sidebar.botPlans', icon: IconReceiptTax, path: '/bot/plans' },
+      { labelKey: 'sidebar.botPromos', icon: IconTicket, path: '/bot/promos' },
+      { labelKey: 'sidebar.botButtons', icon: IconLayoutGrid, path: '/bot/buttons' },
+      { labelKey: 'sidebar.botTransactions', icon: IconReceipt2, path: '/bot/transactions' },
+      { labelKey: 'sidebar.botBroadcast', icon: IconBroadcast, path: '/bot/broadcast' },
     ],
   },
 ];

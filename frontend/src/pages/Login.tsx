@@ -36,6 +36,7 @@ import {
 } from '../api/auth';
 import type { OAuthProvider } from '../api/auth';
 import { useAuth } from '../components/AuthProvider';
+import { useFormValidation, validators } from '../hooks/useFormValidation';
 
 // Yandex icon (not in @tabler/icons)
 function YandexIcon({ size = 20 }: { size?: number }) {
@@ -115,8 +116,20 @@ type LoginStep = 'credentials' | '2fa';
 
 export function LoginPage() {
   const { t } = useTranslation();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const loginForm = useFormValidation(
+    { email: '', password: '' },
+    {
+      email: validators.combine(
+        validators.isNotEmpty(t('validation.required')),
+        validators.isEmail(t('validation.email')),
+      ),
+      password: validators.combine(
+        validators.isNotEmpty(t('validation.required')),
+        validators.hasLength({ min: 8 }, t('validation.password')),
+      ),
+    },
+  );
+  const { email, password } = loginForm.values;
   const [loading, setLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [step, setStep] = useState<LoginStep>('credentials');
@@ -157,7 +170,7 @@ export function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!email || !password) {
+    if (!loginForm.validate()) {
       notifications.show({
         title: t('common.error'),
         message: t('notification.loginValidation'),
@@ -329,7 +342,11 @@ export function LoginPage() {
                     placeholder={t('login.emailPlaceholder')}
                     leftSection={<IconMail size={16} color="#5c5f66" />}
                     value={email}
-                    onChange={(e) => setEmail(e.currentTarget.value)}
+                    onChange={(e) =>
+                      loginForm.setFieldValue('email', e.currentTarget.value)
+                    }
+                    onBlur={() => loginForm.setFieldTouched('email', true)}
+                    error={loginForm.getInputProps('email').error}
                     radius="md"
                     styles={inputFocusStyles}
                   />
@@ -339,7 +356,11 @@ export function LoginPage() {
                     placeholder={t('login.passwordPlaceholder')}
                     leftSection={<IconLock size={16} color="#5c5f66" />}
                     value={password}
-                    onChange={(e) => setPassword(e.currentTarget.value)}
+                    onChange={(e) =>
+                      loginForm.setFieldValue('password', e.currentTarget.value)
+                    }
+                    onBlur={() => loginForm.setFieldTouched('password', true)}
+                    error={loginForm.getInputProps('password').error}
                     radius="md"
                     styles={{
                       ...inputFocusStyles,

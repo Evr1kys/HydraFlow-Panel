@@ -65,6 +65,20 @@ export class SubscriptionService {
     private readonly hwidService: HwidService,
   ) {}
 
+  private resolveServerIp(
+    hostOverrides: Record<string, string>,
+    settings: { serverIp: string | null } | null,
+  ): string {
+    const fromOverride = hostOverrides['serverIp'];
+    if (fromOverride) return fromOverride;
+    if (settings?.serverIp) return settings.serverIp;
+    const fromEnv = process.env['SERVER_PUBLIC_IP'];
+    if (fromEnv) return fromEnv;
+    throw new NotFoundException(
+      'Server public IP is not configured. Set it in Settings or via SERVER_PUBLIC_IP env var.',
+    );
+  }
+
   private async getHostOverrides(
     user: { externalSquadId: string | null; internalSquadId: string | null },
   ): Promise<Record<string, string>> {
@@ -179,7 +193,7 @@ export class SubscriptionService {
     hostOverrides: Record<string, string> = {},
   ): string {
     const links: string[] = [];
-    const serverIp = hostOverrides['serverIp'] ?? settings.serverIp ?? '127.0.0.1';
+    const serverIp = this.resolveServerIp(hostOverrides, settings);
     const remark = user.remark ?? user.email;
 
     if (settings.realityEnabled) {
@@ -247,7 +261,7 @@ export class SubscriptionService {
     },
     hostOverrides: Record<string, string> = {},
   ): string {
-    const serverIp = hostOverrides['serverIp'] ?? settings.serverIp ?? '127.0.0.1';
+    const serverIp = this.resolveServerIp(hostOverrides, settings);
     const remark = user.remark ?? user.email;
     const proxies: string[] = [];
     const proxyNames: string[] = [];
@@ -365,7 +379,7 @@ export class SubscriptionService {
     },
     hostOverrides: Record<string, string> = {},
   ): string {
-    const serverIp = hostOverrides['serverIp'] ?? settings.serverIp ?? '127.0.0.1';
+    const serverIp = this.resolveServerIp(hostOverrides, settings);
     const remark = user.remark ?? user.email;
     const outbounds: Record<string, unknown>[] = [];
     const tags: string[] = [];
@@ -482,6 +496,76 @@ export class SubscriptionService {
     };
 
     return JSON.stringify(config, null, 2);
+  }
+
+  generateOutline(
+    user: { remark: string | null; email: string },
+    settings: {
+      serverIp: string | null;
+      ssEnabled: boolean;
+      ssPort: number;
+      ssMethod: string;
+      ssPassword: string | null;
+    },
+    hostOverrides: Record<string, string> = {},
+  ): string {
+    const serverIp = this.resolveServerIp(hostOverrides, settings);
+    const remark = user.remark ?? user.email;
+    const servers: Record<string, unknown>[] = [];
+
+    if (settings.ssEnabled && settings.ssPassword) {
+      const ssHost = hostOverrides['ss'] ?? serverIp;
+      servers.push({
+        id: 'hydraflow-main',
+        name: `HydraFlow SS - ${remark}`,
+        method: settings.ssMethod,
+        password: settings.ssPassword,
+        server: ssHost,
+        server_port: settings.ssPort,
+      });
+    }
+
+    return JSON.stringify({ servers }, null, 2);
+  }
+
+  async generateOutlineConfig(
+    token: string,
+  ): Promise<{ content: string; contentType: string; userInfo: SubscriptionUserInfo }> {
+    const user = await this.prisma.user.findUnique({
+      where: { subToken: token },
+    });
+
+    if (!user || !user.enabled) {
+      throw new NotFoundException('Invalid or disabled subscription');
+    }
+
+    if (user.expiryDate && user.expiryDate < new Date()) {
+      throw new NotFoundException('Subscription expired');
+    }
+
+    const settings = await this.prisma.settings.findUnique({
+      where: { id: 'main' },
+    });
+
+    if (!settings) {
+      throw new NotFoundException('Server not configured');
+    }
+
+    const userInfo: SubscriptionUserInfo = {
+      upload: user.trafficUp,
+      download: user.trafficDown,
+      total: user.trafficLimit,
+      expire: user.expiryDate,
+    };
+
+    const hostOverrides = await this.getHostOverrides(user);
+    const content = this.generateOutline(user, settings, hostOverrides);
+    return { content, contentType: 'application/json; charset=utf-8', userInfo };
+  }
+
+  getSubscriptionUrl(token: string, host?: string): string {
+    const base = host ?? 'http://localhost:3000';
+    return `${base}/sub/${token}`;
   }
 
   async generatePage(token: string): Promise<string> {
@@ -703,7 +787,7 @@ export class SubscriptionService {
       <div class="sub-url" id="subUrl">${safeSubUrl}</div>
       <div class="qr-container">
         <img
-          src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&amp;data=${encodeURIComponent(subUrl)}"
+          src="/subscription/qr/${encodeURIComponent(token)}"
           alt="QR Code"
           width="200"
           height="200"

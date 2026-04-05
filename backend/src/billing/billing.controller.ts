@@ -9,13 +9,16 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import { BillingService } from './billing.service';
 import { CreateProviderDto } from './dto/create-provider.dto';
 import { CreateBillingNodeDto } from './dto/create-billing-node.dto';
 import { CreateBillingHistoryDto } from './dto/create-billing-history.dto';
 
 @Controller('api/billing')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('superadmin', 'admin')
 export class BillingController {
   constructor(private readonly billingService: BillingService) {}
 

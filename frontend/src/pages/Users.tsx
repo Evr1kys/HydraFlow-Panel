@@ -11,7 +11,6 @@ import {
   ActionIcon,
   Menu,
   Box,
-  Loader,
   Checkbox,
   Progress,
   Paper,
@@ -33,6 +32,7 @@ import {
   IconRefresh,
   IconCalendarPlus,
   IconDevices,
+  IconAlertTriangle,
 } from '@tabler/icons-react';
 import { AreaChart, Area, ResponsiveContainer } from 'recharts';
 import { useTranslation } from 'react-i18next';
@@ -48,6 +48,11 @@ import {
   resetUserTraffic,
 } from '../api/users';
 import type { User } from '../types';
+import { LoadingSkeleton } from '../components/LoadingSkeleton';
+import { EmptyState } from '../components/EmptyState';
+import { useFormValidation, validators } from '../hooks/useFormValidation';
+import { usePermissions } from '../hooks/usePermissions';
+import { extractErrorMessage } from '../api/client';
 
 const cardStyle = {
   backgroundColor: '#1E2128',
@@ -145,25 +150,58 @@ function userSparkline(user: User): { v: number }[] {
   }));
 }
 
+interface CreateUserFormValues {
+  email: string;
+  remark: string;
+  trafficLimitGB: number | '';
+  expiryDate: Date | null;
+  maxDevices: number | '';
+}
+
 export function UsersPage() {
   const { t } = useTranslation();
+  const permissions = usePermissions();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
-  const [newEmail, setNewEmail] = useState('');
-  const [newRemark, setNewRemark] = useState('');
-  const [newTrafficLimitGB, setNewTrafficLimitGB] = useState<number | ''>('');
-  const [newExpiryDate, setNewExpiryDate] = useState<Date | null>(null);
   const [creating, setCreating] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
 
+  const createForm = useFormValidation<CreateUserFormValues>(
+    {
+      email: '',
+      remark: '',
+      trafficLimitGB: '',
+      expiryDate: null,
+      maxDevices: '',
+    },
+    {
+      email: validators.combine(
+        validators.isNotEmpty(t('validation.required')),
+        validators.isEmail(t('validation.email')),
+      ),
+      trafficLimitGB: validators.isInRange(
+        { min: 0, max: 100000 },
+        t('validation.trafficGb'),
+      ),
+      maxDevices: validators.isInRange(
+        { min: 0, max: 1000 },
+        t('validation.positive'),
+      ),
+    },
+  );
+
   const fetchUsers = useCallback(async () => {
+    setLoadError(null);
     try {
       const data = await getUsers();
       setUsers(data);
-    } catch {
+    } catch (err) {
+      const message = extractErrorMessage(err);
+      setLoadError(message);
       notifications.show({
         title: t('common.error'),
         message: t('notification.usersError'),
@@ -179,23 +217,19 @@ export function UsersPage() {
   }, [fetchUsers]);
 
   const handleCreate = async () => {
-    if (!newEmail) return;
+    if (!createForm.validate()) return;
+    const { email, remark, trafficLimitGB, expiryDate } = createForm.values;
     setCreating(true);
     try {
       await createUser({
-        email: newEmail,
-        remark: newRemark || undefined,
+        email,
+        remark: remark || undefined,
         trafficLimit:
-          newTrafficLimitGB !== '' ? gbToBytes(newTrafficLimitGB) : undefined,
-        expiryDate: newExpiryDate
-          ? newExpiryDate.toISOString()
-          : undefined,
+          trafficLimitGB !== '' ? gbToBytes(Number(trafficLimitGB)) : undefined,
+        expiryDate: expiryDate ? expiryDate.toISOString() : undefined,
       });
       setCreateOpen(false);
-      setNewEmail('');
-      setNewRemark('');
-      setNewTrafficLimitGB('');
-      setNewExpiryDate(null);
+      createForm.reset();
       notifications.show({
         title: t('common.success'),
         message: t('notification.userCreated'),
@@ -386,17 +420,16 @@ export function UsersPage() {
   );
 
   if (loading) {
+    return <LoadingSkeleton variant="table" rows={6} />;
+  }
+
+  if (loadError) {
     return (
-      <Box
-        style={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          minHeight: 400,
-        }}
-      >
-        <Loader color="teal" />
-      </Box>
+      <EmptyState
+        icon={IconAlertTriangle}
+        title={t('common.error')}
+        message={loadError}
+      />
     );
   }
 
@@ -417,15 +450,17 @@ export function UsersPage() {
             {users.length}
           </Badge>
         </Group>
-        <Button
-          leftSection={<IconPlus size={16} />}
-          variant="gradient"
-          gradient={{ from: 'teal', to: 'cyan' }}
-          radius="md"
-          onClick={() => setCreateOpen(true)}
-        >
-          {t('users.addUser')}
-        </Button>
+        {permissions.canEdit && (
+          <Button
+            leftSection={<IconPlus size={16} />}
+            variant="gradient"
+            gradient={{ from: 'teal', to: 'cyan' }}
+            radius="md"
+            onClick={() => setCreateOpen(true)}
+          >
+            {t('users.addUser')}
+          </Button>
+        )}
       </Group>
 
       {/* Search */}
@@ -446,7 +481,7 @@ export function UsersPage() {
       />
 
       {/* Bulk actions bar */}
-      {selectedIds.size > 0 && (
+      {selectedIds.size > 0 && permissions.canEdit && (
         <Paper
           p="sm"
           style={{
@@ -688,36 +723,44 @@ export function UsersPage() {
                           >
                             {t('users.copySubLink')}
                           </Menu.Item>
-                          <Menu.Item
-                            leftSection={<IconToggleLeft size={14} />}
-                            onClick={() => handleToggle(user.id)}
-                            style={{ fontSize: '13px' }}
-                          >
-                            {user.enabled ? t('users.disable') : t('users.enable')}
-                          </Menu.Item>
-                          <Menu.Item
-                            leftSection={<IconCalendarPlus size={14} />}
-                            onClick={() => handleRenew(user.id)}
-                            style={{ fontSize: '13px' }}
-                          >
-                            {t('users.renew')}
-                          </Menu.Item>
-                          <Menu.Item
-                            leftSection={<IconRefresh size={14} />}
-                            onClick={() => handleResetTraffic(user.id)}
-                            style={{ fontSize: '13px' }}
-                          >
-                            {t('users.resetTraffic')}
-                          </Menu.Item>
-                          <Menu.Divider style={{ borderColor: 'rgba(255,255,255,0.06)' }} />
-                          <Menu.Item
-                            color="red"
-                            leftSection={<IconTrash size={14} />}
-                            onClick={() => handleDelete(user.id)}
-                            style={{ fontSize: '13px' }}
-                          >
-                            {t('users.delete')}
-                          </Menu.Item>
+                          {permissions.canEdit && (
+                            <>
+                              <Menu.Item
+                                leftSection={<IconToggleLeft size={14} />}
+                                onClick={() => handleToggle(user.id)}
+                                style={{ fontSize: '13px' }}
+                              >
+                                {user.enabled ? t('users.disable') : t('users.enable')}
+                              </Menu.Item>
+                              <Menu.Item
+                                leftSection={<IconCalendarPlus size={14} />}
+                                onClick={() => handleRenew(user.id)}
+                                style={{ fontSize: '13px' }}
+                              >
+                                {t('users.renew')}
+                              </Menu.Item>
+                              <Menu.Item
+                                leftSection={<IconRefresh size={14} />}
+                                onClick={() => handleResetTraffic(user.id)}
+                                style={{ fontSize: '13px' }}
+                              >
+                                {t('users.resetTraffic')}
+                              </Menu.Item>
+                            </>
+                          )}
+                          {permissions.canDelete && (
+                            <>
+                              <Menu.Divider style={{ borderColor: 'rgba(255,255,255,0.06)' }} />
+                              <Menu.Item
+                                color="red"
+                                leftSection={<IconTrash size={14} />}
+                                onClick={() => handleDelete(user.id)}
+                                style={{ fontSize: '13px' }}
+                              >
+                                {t('users.delete')}
+                              </Menu.Item>
+                            </>
+                          )}
                         </Menu.Dropdown>
                       </Menu>
                     </Table.Td>
@@ -772,32 +815,59 @@ export function UsersPage() {
           <TextInput
             label={t('users.email')}
             placeholder="user@example.com"
-            value={newEmail}
-            onChange={(e) => setNewEmail(e.currentTarget.value)}
+            value={createForm.values.email}
+            onChange={(e) =>
+              createForm.setFieldValue('email', e.currentTarget.value)
+            }
+            onBlur={() => createForm.setFieldTouched('email', true)}
+            error={createForm.getInputProps('email').error}
             styles={inputStyles}
           />
           <TextInput
             label={t('users.remark')}
             placeholder="Optional note"
-            value={newRemark}
-            onChange={(e) => setNewRemark(e.currentTarget.value)}
+            value={createForm.values.remark}
+            onChange={(e) =>
+              createForm.setFieldValue('remark', e.currentTarget.value)
+            }
             styles={inputStyles}
           />
           <NumberInput
             label={t('users.trafficLimitGB')}
             placeholder="Leave empty for unlimited"
-            value={newTrafficLimitGB}
+            value={createForm.values.trafficLimitGB}
             onChange={(v) =>
-              setNewTrafficLimitGB(v === '' ? '' : Number(v))
+              createForm.setFieldValue(
+                'trafficLimitGB',
+                v === '' ? '' : Number(v),
+              )
             }
+            onBlur={() => createForm.setFieldTouched('trafficLimitGB', true)}
+            error={createForm.getInputProps('trafficLimitGB').error}
+            min={0}
+            max={100000}
+            styles={inputStyles}
+          />
+          <NumberInput
+            label={t('users.devices')}
+            placeholder="0"
+            value={createForm.values.maxDevices}
+            onChange={(v) =>
+              createForm.setFieldValue(
+                'maxDevices',
+                v === '' ? '' : Number(v),
+              )
+            }
+            onBlur={() => createForm.setFieldTouched('maxDevices', true)}
+            error={createForm.getInputProps('maxDevices').error}
             min={0}
             styles={inputStyles}
           />
           <DateInput
             label={t('users.expiryDate')}
             placeholder="Leave empty for no expiry"
-            value={newExpiryDate}
-            onChange={setNewExpiryDate}
+            value={createForm.values.expiryDate}
+            onChange={(v) => createForm.setFieldValue('expiryDate', v)}
             clearable
             styles={inputStyles}
           />
@@ -806,6 +876,7 @@ export function UsersPage() {
             gradient={{ from: 'teal', to: 'cyan' }}
             loading={creating}
             onClick={handleCreate}
+            disabled={!createForm.isValid || creating}
             radius="md"
             fullWidth
           >

@@ -2,11 +2,11 @@ import { Controller, Get, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { MetricsService } from './metrics.service';
 
-@Controller('metrics')
+@Controller('api/metrics')
 export class MetricsController {
   constructor(private readonly metricsService: MetricsService) {}
 
-  @Get()
+  @Get('prometheus')
   async getMetrics(@Res() res: Response) {
     const metrics = await this.metricsService.getMetrics();
     res.setHeader('Content-Type', this.metricsService.getContentType());

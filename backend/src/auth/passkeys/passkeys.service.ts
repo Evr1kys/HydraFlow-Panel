@@ -19,9 +19,9 @@ import type {
 } from '@simplewebauthn/server';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SessionsService } from '../sessions.service';
+import { RedisService } from '../../common/redis.service';
 
-// In-memory challenge store (keyed by adminId or sessionId)
-const challengeStore = new Map<string, { challenge: string; expiresAt: number }>();
+const CHALLENGE_TTL_SECONDS = 300; // 5 minutes
 
 @Injectable()
 export class PasskeysService {
@@ -34,11 +34,30 @@ export class PasskeysService {
     private readonly jwtService: JwtService,
     private readonly sessionsService: SessionsService,
     private readonly configService: ConfigService,
+    private readonly redis: RedisService,
   ) {
     this.rpName = this.configService.get<string>('WEBAUTHN_RP_NAME', 'HydraFlow Panel');
     this.rpID = this.configService.get<string>('WEBAUTHN_RP_ID', 'localhost');
     const baseUrl = this.configService.get<string>('APP_BASE_URL', 'http://localhost:3000');
     this.origin = this.configService.get<string>('WEBAUTHN_ORIGIN', baseUrl);
+  }
+
+  // --- Challenge store (Redis) ---
+
+  private challengeKey(id: string): string {
+    return `passkey:challenge:${id}`;
+  }
+
+  private async storeChallenge(id: string, challenge: string): Promise<void> {
+    await this.redis.setex(this.challengeKey(id), CHALLENGE_TTL_SECONDS, challenge);
+  }
+
+  private async getChallenge(id: string): Promise<string | null> {
+    return this.redis.get(this.challengeKey(id));
+  }
+
+  private async deleteChallenge(id: string): Promise<void> {
+    await this.redis.del(this.challengeKey(id));
   }
 
   // --- Registration (authenticated admin adds a passkey) ---
@@ -67,30 +86,26 @@ export class PasskeysService {
       },
     });
 
-    // Store challenge
-    challengeStore.set(`reg:${adminId}`, {
-      challenge: options.challenge,
-      expiresAt: Date.now() + 120_000,
-    });
+    // Store challenge in Redis with 5 min TTL
+    await this.storeChallenge(`reg:${adminId}`, options.challenge);
 
     return options;
   }
 
   async verifyRegister(adminId: string, response: RegistrationResponseJSON) {
-    const stored = challengeStore.get(`reg:${adminId}`);
-    if (!stored || stored.expiresAt < Date.now()) {
-      challengeStore.delete(`reg:${adminId}`);
+    const storedChallenge = await this.getChallenge(`reg:${adminId}`);
+    if (!storedChallenge) {
       throw new BadRequestException('Challenge expired or not found');
     }
 
     const verification = await verifyRegistrationResponse({
       response,
-      expectedChallenge: stored.challenge,
+      expectedChallenge: storedChallenge,
       expectedOrigin: this.origin,
       expectedRPID: this.rpID,
     });
 
-    challengeStore.delete(`reg:${adminId}`);
+    await this.deleteChallenge(`reg:${adminId}`);
 
     if (!verification.verified || !verification.registrationInfo) {
       throw new BadRequestException('Registration verification failed');
@@ -120,10 +135,7 @@ export class PasskeysService {
     });
 
     // Store challenge keyed by the challenge itself (for stateless lookup)
-    challengeStore.set(`auth:${options.challenge}`, {
-      challenge: options.challenge,
-      expiresAt: Date.now() + 120_000,
-    });
+    await this.storeChallenge(`auth:${options.challenge}`, options.challenge);
 
     return options;
   }
@@ -143,24 +155,32 @@ export class PasskeysService {
       throw new UnauthorizedException('Passkey not found');
     }
 
-    // Find the challenge - iterate to find a valid one
-    let foundChallengeKey: string | undefined;
-    for (const [key, value] of challengeStore.entries()) {
-      if (key.startsWith('auth:') && value.expiresAt > Date.now()) {
-        foundChallengeKey = key;
-        break;
-      }
+    // Pull challenge from Redis using clientDataJSON's challenge value.
+    // The browser returns it in response.response.clientDataJSON base64url-encoded.
+    const clientDataJSON = Buffer.from(
+      response.response.clientDataJSON,
+      'base64url',
+    ).toString('utf8');
+    let challengeFromClient: string | null = null;
+    try {
+      const parsed = JSON.parse(clientDataJSON) as { challenge?: string };
+      challengeFromClient = parsed.challenge ?? null;
+    } catch {
+      challengeFromClient = null;
     }
 
-    if (!foundChallengeKey) {
+    if (!challengeFromClient) {
+      throw new BadRequestException('Could not parse client challenge');
+    }
+
+    const stored = await this.getChallenge(`auth:${challengeFromClient}`);
+    if (!stored) {
       throw new BadRequestException('No valid challenge found');
     }
 
-    const stored = challengeStore.get(foundChallengeKey)!;
-
     const verification = await verifyAuthenticationResponse({
       response,
-      expectedChallenge: stored.challenge,
+      expectedChallenge: stored,
       expectedOrigin: this.origin,
       expectedRPID: this.rpID,
       credential: {
@@ -171,7 +191,7 @@ export class PasskeysService {
       },
     });
 
-    challengeStore.delete(foundChallengeKey);
+    await this.deleteChallenge(`auth:${challengeFromClient}`);
 
     if (!verification.verified) {
       throw new UnauthorizedException('Authentication verification failed');
@@ -184,9 +204,19 @@ export class PasskeysService {
     });
 
     // Issue JWT
-    const payload = { sub: passkey.admin.id, email: passkey.admin.email };
+    const payload = {
+      sub: passkey.admin.id,
+      email: passkey.admin.email,
+      role: passkey.admin.role,
+      enabled: passkey.admin.enabled,
+    };
     const token = this.jwtService.sign(payload);
     this.sessionsService.create(passkey.admin.id, passkey.admin.email, token, userAgent, ip);
+
+    await this.prisma.admin.update({
+      where: { id: passkey.admin.id },
+      data: { lastLoginAt: new Date() },
+    });
 
     return { token };
   }

@@ -10,7 +10,6 @@ import {
   Stack,
   ActionIcon,
   Box,
-  Loader,
   Paper,
   Badge,
 } from '@mantine/core';
@@ -21,6 +20,7 @@ import {
   IconRefresh,
   IconServer,
   IconCircleFilled,
+  IconAlertTriangle,
 } from '@tabler/icons-react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -30,6 +30,11 @@ import {
   checkNodeHealth,
 } from '../api/nodes';
 import type { Node } from '../types';
+import { LoadingSkeleton } from '../components/LoadingSkeleton';
+import { EmptyState } from '../components/EmptyState';
+import { useFormValidation, validators } from '../hooks/useFormValidation';
+import { usePermissions } from '../hooks/usePermissions';
+import { extractErrorMessage } from '../api/client';
 
 const cardStyle = {
   backgroundColor: '#1E2128',
@@ -61,23 +66,49 @@ const thStyle = {
   textTransform: 'uppercase' as const,
 };
 
+interface CreateNodeFormValues {
+  name: string;
+  address: string;
+  port: number | '';
+  apiKey: string;
+}
+
 export function NodesPage() {
   const { t } = useTranslation();
+  const permissions = usePermissions();
   const [nodes, setNodes] = useState<Node[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newAddress, setNewAddress] = useState('');
-  const [newPort, setNewPort] = useState<number>(443);
-  const [newApiKey, setNewApiKey] = useState('');
   const [checkingId, setCheckingId] = useState<string | null>(null);
 
+  const nodeForm = useFormValidation<CreateNodeFormValues>(
+    { name: '', address: '', port: 443, apiKey: '' },
+    {
+      name: validators.combine(
+        validators.isNotEmpty(t('validation.required')),
+        validators.hasLength({ min: 1, max: 100 }),
+      ),
+      address: validators.combine(
+        validators.isNotEmpty(t('validation.required')),
+        validators.isHostOrIp(t('validation.hostOrIp')),
+      ),
+      port: validators.combine(
+        validators.isNotEmpty(t('validation.required')),
+        validators.isPort(t('validation.port')),
+      ),
+    },
+  );
+
   const fetchNodes = useCallback(async () => {
+    setLoadError(null);
     try {
       const data = await getNodes();
       setNodes(data);
-    } catch {
+    } catch (err) {
+      const message = extractErrorMessage(err);
+      setLoadError(message);
       notifications.show({
         title: t('common.error'),
         message: t('notification.nodesError'),
@@ -93,20 +124,18 @@ export function NodesPage() {
   }, [fetchNodes]);
 
   const handleCreate = async () => {
-    if (!newName || !newAddress) return;
+    if (!nodeForm.validate()) return;
+    const { name, address, port, apiKey } = nodeForm.values;
     setCreating(true);
     try {
       await createNode({
-        name: newName,
-        address: newAddress,
-        port: newPort,
-        apiKey: newApiKey || undefined,
+        name,
+        address,
+        port: Number(port) || 443,
+        apiKey: apiKey || undefined,
       });
       setCreateOpen(false);
-      setNewName('');
-      setNewAddress('');
-      setNewPort(443);
-      setNewApiKey('');
+      nodeForm.reset({ port: 443 });
       notifications.show({
         title: t('common.success'),
         message: t('notification.nodeAdded'),
@@ -164,17 +193,16 @@ export function NodesPage() {
   };
 
   if (loading) {
+    return <LoadingSkeleton variant="table" rows={4} />;
+  }
+
+  if (loadError) {
     return (
-      <Box
-        style={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          minHeight: 400,
-        }}
-      >
-        <Loader color="teal" />
-      </Box>
+      <EmptyState
+        icon={IconAlertTriangle}
+        title={t('common.error')}
+        message={loadError}
+      />
     );
   }
 
@@ -208,15 +236,17 @@ export function NodesPage() {
             {nodes.length}
           </Badge>
         </Group>
-        <Button
-          leftSection={<IconPlus size={16} />}
-          variant="gradient"
-          gradient={{ from: 'teal', to: 'cyan' }}
-          radius="md"
-          onClick={() => setCreateOpen(true)}
-        >
-          {t('nodes.addNode')}
-        </Button>
+        {permissions.canManageNodes && (
+          <Button
+            leftSection={<IconPlus size={16} />}
+            variant="gradient"
+            gradient={{ from: 'teal', to: 'cyan' }}
+            radius="md"
+            onClick={() => setCreateOpen(true)}
+          >
+            {t('nodes.addNode')}
+          </Button>
+        )}
       </Group>
 
       {/* Table */}
@@ -304,15 +334,17 @@ export function NodesPage() {
                         >
                           <IconRefresh size={14} />
                         </ActionIcon>
-                        <ActionIcon
-                          variant="subtle"
-                          color="red"
-                          radius="md"
-                          onClick={() => handleDelete(node.id)}
-                          style={{ border: '1px solid rgba(255,107,107,0.15)' }}
-                        >
-                          <IconTrash size={14} />
-                        </ActionIcon>
+                        {permissions.canDelete && (
+                          <ActionIcon
+                            variant="subtle"
+                            color="red"
+                            radius="md"
+                            onClick={() => handleDelete(node.id)}
+                            style={{ border: '1px solid rgba(255,107,107,0.15)' }}
+                          >
+                            <IconTrash size={14} />
+                          </ActionIcon>
+                        )}
                       </Group>
                     </Table.Td>
                   </Table.Tr>
@@ -320,21 +352,26 @@ export function NodesPage() {
               })}
               {nodes.length === 0 && (
                 <Table.Tr>
-                  <Table.Td colSpan={5}>
-                    <Box
-                      py={48}
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: 8,
-                      }}
-                    >
-                      <IconServer size={40} color="#373A40" stroke={1} />
-                      <Text ta="center" size="sm" style={{ color: '#5c5f66' }}>
-                        {t('nodes.noNodes')}
-                      </Text>
-                    </Box>
+                  <Table.Td colSpan={5} style={{ padding: 0 }}>
+                    <EmptyState
+                      icon={IconServer}
+                      message={t('nodes.noNodes')}
+                      minHeight={220}
+                      action={
+                        permissions.canManageNodes ? (
+                          <Button
+                            leftSection={<IconPlus size={14} />}
+                            variant="light"
+                            color="teal"
+                            radius="md"
+                            size="sm"
+                            onClick={() => setCreateOpen(true)}
+                          >
+                            {t('nodes.addNode')}
+                          </Button>
+                        ) : undefined
+                      }
+                    />
                   </Table.Td>
                 </Table.Tr>
               )}
@@ -366,28 +403,44 @@ export function NodesPage() {
           <TextInput
             label={t('nodes.name')}
             placeholder="Node-1"
-            value={newName}
-            onChange={(e) => setNewName(e.currentTarget.value)}
+            value={nodeForm.values.name}
+            onChange={(e) =>
+              nodeForm.setFieldValue('name', e.currentTarget.value)
+            }
+            onBlur={() => nodeForm.setFieldTouched('name', true)}
+            error={nodeForm.getInputProps('name').error}
             styles={inputStyles}
           />
           <TextInput
             label={t('nodes.address')}
             placeholder="192.168.1.100"
-            value={newAddress}
-            onChange={(e) => setNewAddress(e.currentTarget.value)}
+            value={nodeForm.values.address}
+            onChange={(e) =>
+              nodeForm.setFieldValue('address', e.currentTarget.value)
+            }
+            onBlur={() => nodeForm.setFieldTouched('address', true)}
+            error={nodeForm.getInputProps('address').error}
             styles={inputStyles}
           />
           <NumberInput
             label={t('nodes.port')}
-            value={newPort}
-            onChange={(v) => setNewPort(Number(v))}
+            value={nodeForm.values.port}
+            onChange={(v) =>
+              nodeForm.setFieldValue('port', v === '' ? '' : Number(v))
+            }
+            onBlur={() => nodeForm.setFieldTouched('port', true)}
+            error={nodeForm.getInputProps('port').error}
+            min={1}
+            max={65535}
             styles={inputStyles}
           />
           <TextInput
             label={t('nodes.apiKey')}
             placeholder={t('nodes.optional')}
-            value={newApiKey}
-            onChange={(e) => setNewApiKey(e.currentTarget.value)}
+            value={nodeForm.values.apiKey}
+            onChange={(e) =>
+              nodeForm.setFieldValue('apiKey', e.currentTarget.value)
+            }
             styles={inputStyles}
           />
           <Button
@@ -395,6 +448,7 @@ export function NodesPage() {
             gradient={{ from: 'teal', to: 'cyan' }}
             loading={creating}
             onClick={handleCreate}
+            disabled={!nodeForm.isValid || creating}
             radius="md"
             fullWidth
           >

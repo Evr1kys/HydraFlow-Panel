@@ -6,11 +6,15 @@ import {
   TextInput,
   ActionIcon,
   Box,
-  Loader,
   Paper,
   Badge,
   Stack,
 } from '@mantine/core';
+import { LoadingSkeleton } from '../components/LoadingSkeleton';
+import { EmptyState } from '../components/EmptyState';
+import { IconAlertTriangle } from '@tabler/icons-react';
+import { extractErrorMessage } from '../api/client';
+import { usePermissions } from '../hooks/usePermissions';
 import { notifications } from '@mantine/notifications';
 import {
   IconDevices,
@@ -64,15 +68,19 @@ function PlatformIcon({ platform }: { platform: string }) {
 
 export function DevicesPage() {
   const { t } = useTranslation();
+  const permissions = usePermissions();
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
 
   const fetchDevices = useCallback(async () => {
+    setLoadError(null);
     try {
       const data = await getDevices();
       setDevices(data);
-    } catch {
+    } catch (err) {
+      setLoadError(extractErrorMessage(err));
       notifications.show({
         title: t('common.error'),
         message: t('notification.deviceRemoveError'),
@@ -110,17 +118,16 @@ export function DevicesPage() {
   );
 
   if (loading) {
+    return <LoadingSkeleton variant="table" rows={5} />;
+  }
+
+  if (loadError) {
     return (
-      <Box
-        style={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          minHeight: 400,
-        }}
-      >
-        <Loader color="teal" />
-      </Box>
+      <EmptyState
+        icon={IconAlertTriangle}
+        title={t('common.error')}
+        message={loadError}
+      />
     );
   }
 
@@ -237,36 +244,29 @@ export function DevicesPage() {
                     </Text>
                   </Table.Td>
                   <Table.Td>
-                    <ActionIcon
-                      variant="subtle"
-                      color="red"
-                      radius="md"
-                      onClick={() => handleRemove(device.id)}
-                      style={{ border: '1px solid rgba(255,107,107,0.15)' }}
-                      title={t('devices.remove')}
-                    >
-                      <IconTrash size={14} />
-                    </ActionIcon>
+                    {permissions.canDelete && (
+                      <ActionIcon
+                        variant="subtle"
+                        color="red"
+                        radius="md"
+                        onClick={() => handleRemove(device.id)}
+                        style={{ border: '1px solid rgba(255,107,107,0.15)' }}
+                        title={t('devices.remove')}
+                      >
+                        <IconTrash size={14} />
+                      </ActionIcon>
+                    )}
                   </Table.Td>
                 </Table.Tr>
               ))}
               {filteredDevices.length === 0 && (
                 <Table.Tr>
-                  <Table.Td colSpan={5}>
-                    <Box
-                      py={48}
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: 8,
-                      }}
-                    >
-                      <IconDevices size={40} color="#373A40" stroke={1} />
-                      <Text ta="center" size="sm" style={{ color: '#5c5f66' }}>
-                        {t('devices.noDevices')}
-                      </Text>
-                    </Box>
+                  <Table.Td colSpan={5} style={{ padding: 0 }}>
+                    <EmptyState
+                      icon={IconDevices}
+                      message={t('devices.noDevices')}
+                      minHeight={200}
+                    />
                   </Table.Td>
                 </Table.Tr>
               )}

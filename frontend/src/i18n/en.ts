@@ -17,12 +17,21 @@ const en = {
   'sidebar.protocolHealth': 'Protocol Health',
   'sidebar.devices': 'Devices (HWID)',
   'sidebar.billing': 'Billing',
+  'sidebar.userBilling': 'User Billing',
   'sidebar.plugins': 'Plugins',
   'sidebar.sessions': 'Sessions',
   'sidebar.configuration': 'Configuration',
   'sidebar.configEditor': 'Config Editor',
   'sidebar.migration': 'Migration',
   'sidebar.logout': 'Logout',
+  'sidebar.bot': 'BOT',
+  'sidebar.botOverview': 'Overview',
+  'sidebar.botUsers': 'Bot Users',
+  'sidebar.botPlans': 'Plans',
+  'sidebar.botPromos': 'Promo Codes',
+  'sidebar.botButtons': 'Button Constructor',
+  'sidebar.botTransactions': 'Transactions',
+  'sidebar.botBroadcast': 'Broadcast',
 
   // Dashboard
   'dashboard.title': 'Dashboard',
@@ -305,6 +314,127 @@ const en = {
   'language.en': 'English',
   'language.ru': 'Russian',
   'language.zh': 'Chinese',
+
+  // Error boundary / errors
+  'error.boundaryTitle': 'Something went wrong',
+  'error.boundarySubtitle': 'An unexpected error was caught',
+  'error.reload': 'Reload',
+  'error.tryAgain': 'Try again',
+  'error.showDetails': 'Show details',
+  'error.hideDetails': 'Hide details',
+  'error.stackTrace': 'Stack trace',
+  'error.componentStack': 'Component stack',
+  'error.requestFailed': 'Request failed',
+  'error.networkError': 'Network error',
+  'error.unknown': 'Unknown error',
+
+  // Empty state
+  'empty.noItems': 'No items yet',
+  'empty.noResults': 'No results found',
+  'empty.startBy': 'Get started by creating one',
+  'empty.create': 'Create',
+
+  // Validation
+  'validation.required': 'This field is required',
+  'validation.email': 'Invalid email address',
+  'validation.password': 'Password must be at least 8 characters',
+  'validation.port': 'Port must be between 1 and 65535',
+  'validation.url': 'Invalid URL',
+  'validation.uuid': 'Invalid UUID',
+  'validation.ipAddress': 'Invalid IP address',
+  'validation.hostOrIp': 'Invalid host or IP address',
+  'validation.json': 'Must be valid JSON',
+  'validation.positive': 'Must be a positive number',
+  'validation.trafficGb': 'Must be between 0 and 100000 GB',
+  'validation.maxUsers': 'Must be a positive integer',
+  'validation.minLength': 'Too short',
+  'validation.maxLength': 'Too long',
+  'validation.number': 'Must be a number',
+  'validation.domain': 'Invalid domain',
+
+  // Billing page
+  'billing.title': 'Billing',
+  'billing.noData': 'No billing records yet',
+  'billing.amount': 'Amount',
+  'billing.currency': 'Currency',
+  'billing.provider': 'Provider',
+  'billing.status': 'Status',
+
+  // Plugins page
+  'plugins.title': 'Plugins',
+  'plugins.type': 'Plugin Type',
+  'plugins.config': 'Configuration (JSON)',
+  'plugins.noPlugins': 'No plugins enabled',
+  'plugins.add': 'Add Plugin',
+
+  // Squads page
+  'squads.title': 'Squads',
+  'squads.noSquads': 'No squads yet',
+  'squads.create': 'Create Squad',
+  'squads.name': 'Name',
+  'squads.description': 'Description',
+  'squads.maxUsers': 'Max Users',
+
+  // Sessions page
+  'sessions.title': 'Sessions',
+  'sessions.noSessions': 'No active sessions',
+
+  // Migration page
+  'migration.title': 'Migration',
+  'migration.noTasks': 'No migration tasks',
+
+  // Role / access
+  'access.readOnly': 'Read-only access',
+  'access.denied': 'Access denied',
+  'access.insufficientPermissions': 'Insufficient permissions',
+
+  // Backup page
+  'backup.title': 'Backups',
+  'backup.createNow': 'Create Backup Now',
+  'backup.date': 'Date',
+  'backup.type': 'Type',
+  'backup.status': 'Status',
+  'backup.size': 'Size',
+  'backup.actions': 'Actions',
+  'backup.download': 'Download',
+  'backup.delete': 'Delete',
+  'backup.restore': 'Restore',
+  'backup.noBackups': 'No backups yet',
+  'backup.created': 'Backup created',
+  'backup.deleted': 'Backup deleted',
+  'backup.restored': 'Restore completed',
+  'backup.createError': 'Failed to create backup',
+  'backup.deleteError': 'Failed to delete backup',
+  'backup.restoreError': 'Restore failed',
+  'backup.downloadError': 'Download failed',
+  'backup.loadError': 'Failed to load backups',
+  'backup.restoreTitle': 'Restore database',
+  'backup.restoreWarning': 'This will replace the current database with the contents of the selected backup. This action cannot be undone.',
+  'backup.confirmRestore': 'Yes, restore',
+
+  // Email settings
+  'email.title': 'Email',
+  'email.smtp': 'SMTP Configuration',
+  'email.smtpDesc': 'Outgoing mail server for notifications',
+  'email.host': 'SMTP Host',
+  'email.port': 'Port',
+  'email.user': 'Username',
+  'email.password': 'Password',
+  'email.fromEmail': 'From Email',
+  'email.fromName': 'From Name',
+  'email.secure': 'Use TLS',
+  'email.testTo': 'Send test email to',
+  'email.sendTest': 'Send test email',
+  'email.saved': 'Email settings saved',
+  'email.saveError': 'Failed to save email settings',
+  'email.testSent': 'Test email sent',
+  'email.testFailed': 'Failed to send test email',
+
+  // Telegram settings
+  'telegram.alerts': 'Telegram Alerts',
+  'telegram.alertsDesc': 'Receive notifications in Telegram',
+
+  'sidebar.backup': 'Backup',
 };
 
 export default en;

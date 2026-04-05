@@ -17,12 +17,21 @@ const ru = {
   'sidebar.protocolHealth': 'Состояние протоколов',
   'sidebar.devices': 'Устройства (HWID)',
   'sidebar.billing': 'Биллинг',
+  'sidebar.userBilling': 'Платежи клиентов',
   'sidebar.plugins': 'Плагины',
   'sidebar.sessions': 'Сессии',
   'sidebar.configuration': 'Конфигурация',
   'sidebar.configEditor': 'Редактор конфигов',
   'sidebar.migration': 'Миграция',
   'sidebar.logout': 'Выход',
+  'sidebar.bot': 'БОТ',
+  'sidebar.botOverview': 'Обзор',
+  'sidebar.botUsers': 'Пользователи бота',
+  'sidebar.botPlans': 'Тарифы',
+  'sidebar.botPromos': 'Промокоды',
+  'sidebar.botButtons': 'Конструктор кнопок',
+  'sidebar.botTransactions': 'Транзакции',
+  'sidebar.botBroadcast': 'Рассылка',
 
   // Dashboard
   'dashboard.title': 'Панель управления',
@@ -305,6 +314,127 @@ const ru = {
   'language.en': 'Английский',
   'language.ru': 'Русский',
   'language.zh': 'Китайский',
+
+  // Error boundary / errors
+  'error.boundaryTitle': 'Что-то пошло не так',
+  'error.boundarySubtitle': 'Произошла непредвиденная ошибка',
+  'error.reload': 'Перезагрузить',
+  'error.tryAgain': 'Попробовать снова',
+  'error.showDetails': 'Показать детали',
+  'error.hideDetails': 'Скрыть детали',
+  'error.stackTrace': 'Трассировка стека',
+  'error.componentStack': 'Стек компонентов',
+  'error.requestFailed': 'Запрос не выполнен',
+  'error.networkError': 'Сетевая ошибка',
+  'error.unknown': 'Неизвестная ошибка',
+
+  // Empty state
+  'empty.noItems': 'Пока нет данных',
+  'empty.noResults': 'Ничего не найдено',
+  'empty.startBy': 'Создайте первую запись',
+  'empty.create': 'Создать',
+
+  // Validation
+  'validation.required': 'Это поле обязательно',
+  'validation.email': 'Неверный email',
+  'validation.password': 'Пароль должен быть не менее 8 символов',
+  'validation.port': 'Порт должен быть от 1 до 65535',
+  'validation.url': 'Неверный URL',
+  'validation.uuid': 'Неверный UUID',
+  'validation.ipAddress': 'Неверный IP-адрес',
+  'validation.hostOrIp': 'Неверный хост или IP-адрес',
+  'validation.json': 'Должен быть корректным JSON',
+  'validation.positive': 'Должно быть положительным числом',
+  'validation.trafficGb': 'Должно быть от 0 до 100000 ГБ',
+  'validation.maxUsers': 'Должно быть положительным целым',
+  'validation.minLength': 'Слишком коротко',
+  'validation.maxLength': 'Слишком длинно',
+  'validation.number': 'Должно быть числом',
+  'validation.domain': 'Неверный домен',
+
+  // Billing page
+  'billing.title': 'Биллинг',
+  'billing.noData': 'Записей биллинга пока нет',
+  'billing.amount': 'Сумма',
+  'billing.currency': 'Валюта',
+  'billing.provider': 'Провайдер',
+  'billing.status': 'Статус',
+
+  // Plugins page
+  'plugins.title': 'Плагины',
+  'plugins.type': 'Тип плагина',
+  'plugins.config': 'Конфигурация (JSON)',
+  'plugins.noPlugins': 'Плагины не подключены',
+  'plugins.add': 'Добавить плагин',
+
+  // Squads page
+  'squads.title': 'Отряды',
+  'squads.noSquads': 'Отрядов пока нет',
+  'squads.create': 'Создать отряд',
+  'squads.name': 'Название',
+  'squads.description': 'Описание',
+  'squads.maxUsers': 'Макс. пользователей',
+
+  // Sessions page
+  'sessions.title': 'Сессии',
+  'sessions.noSessions': 'Нет активных сессий',
+
+  // Migration page
+  'migration.title': 'Миграция',
+  'migration.noTasks': 'Задач миграции нет',
+
+  // Role / access
+  'access.readOnly': 'Доступ только для чтения',
+  'access.denied': 'Доступ запрещён',
+  'access.insufficientPermissions': 'Недостаточно прав',
+
+  // Backup page
+  'backup.title': 'Резервные копии',
+  'backup.createNow': 'Создать сейчас',
+  'backup.date': 'Дата',
+  'backup.type': 'Тип',
+  'backup.status': 'Статус',
+  'backup.size': 'Размер',
+  'backup.actions': 'Действия',
+  'backup.download': 'Скачать',
+  'backup.delete': 'Удалить',
+  'backup.restore': 'Восстановить',
+  'backup.noBackups': 'Резервных копий нет',
+  'backup.created': 'Резервная копия создана',
+  'backup.deleted': 'Резервная копия удалена',
+  'backup.restored': 'Восстановление завершено',
+  'backup.createError': 'Не удалось создать резервную копию',
+  'backup.deleteError': 'Не удалось удалить резервную копию',
+  'backup.restoreError': 'Восстановление не удалось',
+  'backup.downloadError': 'Скачивание не удалось',
+  'backup.loadError': 'Не удалось загрузить список',
+  'backup.restoreTitle': 'Восстановить базу данных',
+  'backup.restoreWarning': 'Текущая база данных будет заменена содержимым выбранной резервной копии. Действие нельзя отменить.',
+  'backup.confirmRestore': 'Да, восстановить',
+
+  // Email settings
+  'email.title': 'Email',
+  'email.smtp': 'Настройки SMTP',
+  'email.smtpDesc': 'Сервер исходящей почты для уведомлений',
+  'email.host': 'SMTP Host',
+  'email.port': 'Порт',
+  'email.user': 'Пользователь',
+  'email.password': 'Пароль',
+  'email.fromEmail': 'От (email)',
+  'email.fromName': 'Имя отправителя',
+  'email.secure': 'Использовать TLS',
+  'email.testTo': 'Куда отправить тест',
+  'email.sendTest': 'Отправить тест',
+  'email.saved': 'Настройки email сохранены',
+  'email.saveError': 'Не удалось сохранить настройки email',
+  'email.testSent': 'Тестовое письмо отправлено',
+  'email.testFailed': 'Не удалось отправить тест',
+
+  // Telegram settings
+  'telegram.alerts': 'Telegram-оповещения',
+  'telegram.alertsDesc': 'Получать уведомления в Telegram',
+
+  'sidebar.backup': 'Резервные копии',
 };
 
 export default ru;

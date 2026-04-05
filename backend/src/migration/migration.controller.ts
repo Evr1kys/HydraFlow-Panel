@@ -16,12 +16,15 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import { MigrationService } from './migration.service';
 
 @ApiTags('Migration')
 @ApiBearerAuth()
 @Controller('api/migrate')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('superadmin')
 export class MigrationController {
   constructor(private readonly migrationService: MigrationService) {}
 

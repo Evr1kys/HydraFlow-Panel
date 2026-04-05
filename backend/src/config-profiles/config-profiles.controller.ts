@@ -44,4 +44,9 @@ export class ConfigProfilesController {
   remove(@Param('id') id: string) {
     return this.configProfilesService.remove(id);
   }
+
+  @Post(':id/default')
+  setDefault(@Param('id') id: string) {
+    return this.configProfilesService.setDefault(id);
+  }
 }

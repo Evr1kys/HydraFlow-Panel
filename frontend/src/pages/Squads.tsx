@@ -11,13 +11,15 @@ import {
   Stack,
   ActionIcon,
   Box,
-  Loader,
   Paper,
   Badge,
   Tabs,
   Switch,
   MultiSelect,
 } from '@mantine/core';
+import { LoadingSkeleton } from '../components/LoadingSkeleton';
+import { EmptyState } from '../components/EmptyState';
+import { usePermissions } from '../hooks/usePermissions';
 import { notifications } from '@mantine/notifications';
 import {
   IconPlus,
@@ -93,6 +95,7 @@ const modalStyles = {
 // ============= INTERNAL SQUADS TAB =============
 
 function InternalSquadsTab() {
+  const permissions = usePermissions();
   const [squads, setSquads] = useState<InternalSquad[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [allNodes, setAllNodes] = useState<Node[]>([]);
@@ -231,11 +234,7 @@ function InternalSquadsTab() {
   }));
 
   if (loading) {
-    return (
-      <Box style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300 }}>
-        <Loader color="teal" />
-      </Box>
-    );
+    return <LoadingSkeleton variant="table" rows={4} />;
   }
 
   return (
@@ -244,15 +243,17 @@ function InternalSquadsTab() {
         <Text size="lg" fw={600} style={{ color: '#C1C2C5' }}>
           Internal Squads
         </Text>
-        <Button
-          leftSection={<IconPlus size={16} />}
-          variant="gradient"
-          gradient={{ from: 'teal', to: 'cyan' }}
-          radius="md"
-          onClick={() => setCreateOpen(true)}
-        >
-          Create Squad
-        </Button>
+        {permissions.canEdit && (
+          <Button
+            leftSection={<IconPlus size={16} />}
+            variant="gradient"
+            gradient={{ from: 'teal', to: 'cyan' }}
+            radius="md"
+            onClick={() => setCreateOpen(true)}
+          >
+            Create Squad
+          </Button>
+        )}
       </Group>
 
       <Paper style={{ ...cardStyle, overflow: 'hidden' }}>
@@ -318,32 +319,53 @@ function InternalSquadsTab() {
                   </Table.Td>
                   <Table.Td>
                     <Group gap="xs">
-                      <ActionIcon variant="subtle" color="teal" radius="md"
-                        onClick={() => openAssign(squad)}
-                        style={{ border: '1px solid rgba(32,201,151,0.15)' }}>
-                        <IconUserPlus size={14} />
-                      </ActionIcon>
-                      <ActionIcon variant="subtle" color="blue" radius="md"
-                        onClick={() => handleEdit(squad)}
-                        style={{ border: '1px solid rgba(51,154,240,0.15)' }}>
-                        <IconEdit size={14} />
-                      </ActionIcon>
-                      <ActionIcon variant="subtle" color="red" radius="md"
-                        onClick={() => handleDelete(squad.id)}
-                        style={{ border: '1px solid rgba(255,107,107,0.15)' }}>
-                        <IconTrash size={14} />
-                      </ActionIcon>
+                      {permissions.canEdit && (
+                        <>
+                          <ActionIcon variant="subtle" color="teal" radius="md"
+                            onClick={() => openAssign(squad)}
+                            style={{ border: '1px solid rgba(32,201,151,0.15)' }}>
+                            <IconUserPlus size={14} />
+                          </ActionIcon>
+                          <ActionIcon variant="subtle" color="blue" radius="md"
+                            onClick={() => handleEdit(squad)}
+                            style={{ border: '1px solid rgba(51,154,240,0.15)' }}>
+                            <IconEdit size={14} />
+                          </ActionIcon>
+                        </>
+                      )}
+                      {permissions.canDelete && (
+                        <ActionIcon variant="subtle" color="red" radius="md"
+                          onClick={() => handleDelete(squad.id)}
+                          style={{ border: '1px solid rgba(255,107,107,0.15)' }}>
+                          <IconTrash size={14} />
+                        </ActionIcon>
+                      )}
                     </Group>
                   </Table.Td>
                 </Table.Tr>
               ))}
               {squads.length === 0 && (
                 <Table.Tr>
-                  <Table.Td colSpan={5}>
-                    <Box py={48} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-                      <IconUsersGroup size={40} color="#373A40" stroke={1} />
-                      <Text ta="center" size="sm" style={{ color: '#5c5f66' }}>No internal squads yet</Text>
-                    </Box>
+                  <Table.Td colSpan={5} style={{ padding: 0 }}>
+                    <EmptyState
+                      icon={IconUsersGroup}
+                      message="No internal squads yet"
+                      minHeight={200}
+                      action={
+                        permissions.canEdit ? (
+                          <Button
+                            leftSection={<IconPlus size={14} />}
+                            variant="light"
+                            color="teal"
+                            radius="md"
+                            size="sm"
+                            onClick={() => setCreateOpen(true)}
+                          >
+                            Create Squad
+                          </Button>
+                        ) : undefined
+                      }
+                    />
                   </Table.Td>
                 </Table.Tr>
               )}
@@ -356,7 +378,9 @@ function InternalSquadsTab() {
       <Modal opened={createOpen} onClose={() => setCreateOpen(false)} title="Create Internal Squad" radius="lg" styles={modalStyles}>
         <Stack gap="md" mt="md">
           <TextInput label="Name" placeholder="Squad name" value={newName}
-            onChange={(e) => setNewName(e.currentTarget.value)} styles={inputStyles} />
+            onChange={(e) => setNewName(e.currentTarget.value)}
+            error={newName.trim() === '' ? 'This field is required' : null}
+            styles={inputStyles} />
           <Textarea label="Description" placeholder="Optional description" value={newDesc}
             onChange={(e) => setNewDesc(e.currentTarget.value)}
             styles={{ input: inputStyles.input, label: inputStyles.label }} />
@@ -364,7 +388,8 @@ function InternalSquadsTab() {
             data={nodeOptions} value={newNodeIds} onChange={setNewNodeIds}
             styles={{ input: inputStyles.input, label: inputStyles.label, pill: { backgroundColor: '#339AF0', color: '#fff' } }} />
           <Button variant="gradient" gradient={{ from: 'teal', to: 'cyan' }}
-            loading={creating} onClick={handleCreate} radius="md" fullWidth>
+            loading={creating} onClick={handleCreate} radius="md" fullWidth
+            disabled={!newName.trim() || creating}>
             Create Squad
           </Button>
         </Stack>
@@ -410,6 +435,7 @@ function InternalSquadsTab() {
 // ============= EXTERNAL SQUADS TAB =============
 
 function ExternalSquadsTab() {
+  const permissions = usePermissions();
   const [squads, setSquads] = useState<ExternalSquad[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -544,11 +570,7 @@ function ExternalSquadsTab() {
   };
 
   if (loading) {
-    return (
-      <Box style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300 }}>
-        <Loader color="teal" />
-      </Box>
-    );
+    return <LoadingSkeleton variant="table" rows={4} />;
   }
 
   return (
@@ -557,11 +579,13 @@ function ExternalSquadsTab() {
         <Text size="lg" fw={600} style={{ color: '#C1C2C5' }}>
           External Squads (Resellers)
         </Text>
-        <Button leftSection={<IconPlus size={16} />} variant="gradient"
-          gradient={{ from: 'teal', to: 'cyan' }} radius="md"
-          onClick={() => setCreateOpen(true)}>
-          Create External Squad
-        </Button>
+        {permissions.canEdit && (
+          <Button leftSection={<IconPlus size={16} />} variant="gradient"
+            gradient={{ from: 'teal', to: 'cyan' }} radius="md"
+            onClick={() => setCreateOpen(true)}>
+            Create External Squad
+          </Button>
+        )}
       </Group>
 
       <Paper style={{ ...cardStyle, overflow: 'hidden' }}>
@@ -623,32 +647,53 @@ function ExternalSquadsTab() {
                   </Table.Td>
                   <Table.Td>
                     <Group gap="xs">
-                      <ActionIcon variant="subtle" color="yellow" radius="md"
-                        onClick={() => handleRegenKey(squad.id)}
-                        style={{ border: '1px solid rgba(252,196,25,0.15)' }}>
-                        <IconRefresh size={14} />
-                      </ActionIcon>
-                      <ActionIcon variant="subtle" color="blue" radius="md"
-                        onClick={() => handleEdit(squad)}
-                        style={{ border: '1px solid rgba(51,154,240,0.15)' }}>
-                        <IconEdit size={14} />
-                      </ActionIcon>
-                      <ActionIcon variant="subtle" color="red" radius="md"
-                        onClick={() => handleDelete(squad.id)}
-                        style={{ border: '1px solid rgba(255,107,107,0.15)' }}>
-                        <IconTrash size={14} />
-                      </ActionIcon>
+                      {permissions.canEdit && (
+                        <>
+                          <ActionIcon variant="subtle" color="yellow" radius="md"
+                            onClick={() => handleRegenKey(squad.id)}
+                            style={{ border: '1px solid rgba(252,196,25,0.15)' }}>
+                            <IconRefresh size={14} />
+                          </ActionIcon>
+                          <ActionIcon variant="subtle" color="blue" radius="md"
+                            onClick={() => handleEdit(squad)}
+                            style={{ border: '1px solid rgba(51,154,240,0.15)' }}>
+                            <IconEdit size={14} />
+                          </ActionIcon>
+                        </>
+                      )}
+                      {permissions.canDelete && (
+                        <ActionIcon variant="subtle" color="red" radius="md"
+                          onClick={() => handleDelete(squad.id)}
+                          style={{ border: '1px solid rgba(255,107,107,0.15)' }}>
+                          <IconTrash size={14} />
+                        </ActionIcon>
+                      )}
                     </Group>
                   </Table.Td>
                 </Table.Tr>
               ))}
               {squads.length === 0 && (
                 <Table.Tr>
-                  <Table.Td colSpan={6}>
-                    <Box py={48} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-                      <IconKey size={40} color="#373A40" stroke={1} />
-                      <Text ta="center" size="sm" style={{ color: '#5c5f66' }}>No external squads yet</Text>
-                    </Box>
+                  <Table.Td colSpan={6} style={{ padding: 0 }}>
+                    <EmptyState
+                      icon={IconKey}
+                      message="No external squads yet"
+                      minHeight={200}
+                      action={
+                        permissions.canEdit ? (
+                          <Button
+                            leftSection={<IconPlus size={14} />}
+                            variant="light"
+                            color="teal"
+                            radius="md"
+                            size="sm"
+                            onClick={() => setCreateOpen(true)}
+                          >
+                            Create External Squad
+                          </Button>
+                        ) : undefined
+                      }
+                    />
                   </Table.Td>
                 </Table.Tr>
               )}
@@ -662,9 +707,17 @@ function ExternalSquadsTab() {
         title="Create External Squad" radius="lg" size="lg" styles={modalStyles}>
         <Stack gap="md" mt="md">
           <TextInput label="Name" placeholder="Partner name" value={newName}
-            onChange={(e) => setNewName(e.currentTarget.value)} styles={inputStyles} />
+            onChange={(e) => setNewName(e.currentTarget.value)}
+            error={newName.trim() === '' ? 'This field is required' : null}
+            styles={inputStyles} />
           <NumberInput label="Max Users" value={newMaxUsers}
-            onChange={(v) => setNewMaxUsers(v === '' ? '' : Number(v))} min={1} styles={inputStyles} />
+            onChange={(v) => setNewMaxUsers(v === '' ? '' : Number(v))}
+            error={
+              newMaxUsers !== '' && (newMaxUsers < 1 || newMaxUsers > 1000000)
+                ? 'Must be a positive integer'
+                : null
+            }
+            min={1} max={1000000} styles={inputStyles} />
           <Switch label="Enabled" checked={newEnabled} onChange={(e) => setNewEnabled(e.currentTarget.checked)}
             color="teal" styles={{ label: { color: '#909296' } }} />
           <TextInput label="Subscription Page Title" placeholder="Custom brand title"
@@ -673,10 +726,21 @@ function ExternalSquadsTab() {
             value={newSubBrand} onChange={(e) => setNewSubBrand(e.currentTarget.value)} styles={inputStyles} />
           <Textarea label="Host Overrides (JSON)" placeholder='{"serverIp": "1.2.3.4", "reality": "5.6.7.8"}'
             value={newHostOverrides} onChange={(e) => setNewHostOverrides(e.currentTarget.value)}
+            error={
+              newHostOverrides.trim() && (() => {
+                try {
+                  JSON.parse(newHostOverrides);
+                  return null;
+                } catch {
+                  return 'Must be valid JSON';
+                }
+              })()
+            }
             minRows={3}
             styles={{ input: { ...inputStyles.input, fontFamily: "'JetBrains Mono', monospace", fontSize: '12px' }, label: inputStyles.label }} />
           <Button variant="gradient" gradient={{ from: 'teal', to: 'cyan' }}
-            loading={creating} onClick={handleCreate} radius="md" fullWidth>
+            loading={creating} onClick={handleCreate} radius="md" fullWidth
+            disabled={!newName.trim() || creating}>
             Create External Squad
           </Button>
         </Stack>

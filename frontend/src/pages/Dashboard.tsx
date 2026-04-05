@@ -8,7 +8,6 @@ import {
   Button,
   Stack,
   Box,
-  Loader,
   Timeline,
   SegmentedControl,
 } from '@mantine/core';
@@ -43,7 +42,11 @@ import { useTranslation } from 'react-i18next';
 import { getDashboardStats } from '../api/dashboard';
 import { getHealth } from '../api/health';
 import { restartXray } from '../api/xray';
+import { getTrafficHistoryDaily, type TrafficHistoryPointNumeric } from '../api/traffic';
 import type { DashboardStats, ProtocolHealth } from '../types';
+import { LoadingSkeleton } from '../components/LoadingSkeleton';
+import { EmptyState } from '../components/EmptyState';
+import { extractErrorMessage } from '../api/client';
 
 const cardStyle = {
   backgroundColor: '#1E2128',
@@ -372,23 +375,18 @@ function ProtocolCard({ name, port, enabled, health, color }: ProtocolCardProps)
   );
 }
 
-// Generate traffic history mock data for the chart
-function generateTrafficHistory(days: number): { date: string; upload: number; download: number }[] {
-  const points: { date: string; upload: number; download: number }[] = [];
-  const now = new Date();
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(now);
-    d.setDate(d.getDate() - i);
-    const label = days <= 1
-      ? `${d.getHours()}:00`
-      : `${d.getMonth() + 1}/${d.getDate()}`;
-    points.push({
-      date: label,
-      upload: Math.floor(Math.random() * 3e9 + 5e8),
-      download: Math.floor(Math.random() * 8e9 + 2e9),
-    });
+// Format a daily traffic history point's date for display on the chart x-axis
+function formatTrafficDate(isoDate: string): string {
+  // Backend returns YYYY-MM-DD for daily aggregation
+  const parts = isoDate.split('-');
+  if (parts.length >= 3) {
+    return `${parseInt(parts[1]!, 10)}/${parseInt(parts[2]!, 10)}`;
   }
-  return points;
+  const d = new Date(isoDate);
+  if (!isNaN(d.getTime())) {
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+  }
+  return isoDate;
 }
 
 interface ChartTooltipProps {
@@ -425,10 +423,15 @@ export function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [health, setHealth] = useState<ProtocolHealth[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [restarting, setRestarting] = useState(false);
   const [trafficPeriod, setTrafficPeriod] = useState('7d');
+  const [trafficHistoryData, setTrafficHistoryData] = useState<
+    TrafficHistoryPointNumeric[]
+  >([]);
 
   const fetchData = async () => {
+    setLoadError(null);
     try {
       const [statsData, healthData] = await Promise.all([
         getDashboardStats(),
@@ -436,7 +439,9 @@ export function DashboardPage() {
       ]);
       setStats(statsData);
       setHealth(healthData);
-    } catch {
+    } catch (err) {
+      const message = extractErrorMessage(err);
+      setLoadError(message);
       notifications.show({
         title: t('common.error'),
         message: t('notification.dashboardError'),
@@ -451,6 +456,26 @@ export function DashboardPage() {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const days =
+      trafficPeriod === '24h' ? 1 : trafficPeriod === '7d' ? 7 : 30;
+    let cancelled = false;
+    getTrafficHistoryDaily(days)
+      .then((points) => {
+        if (!cancelled) {
+          setTrafficHistoryData(points);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setTrafficHistoryData([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [trafficPeriod]);
 
   const handleRestart = async () => {
     setRestarting(true);
@@ -476,17 +501,16 @@ export function DashboardPage() {
   };
 
   if (loading) {
+    return <LoadingSkeleton variant="dashboard" />;
+  }
+
+  if (loadError) {
     return (
-      <Box
-        style={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          minHeight: 400,
-        }}
-      >
-        <Loader color="teal" />
-      </Box>
+      <EmptyState
+        icon={IconAlertTriangle}
+        title={t('common.error')}
+        message={loadError}
+      />
     );
   }
 
@@ -499,8 +523,11 @@ export function DashboardPage() {
 
   const xrayRunning = stats?.xray.running ?? false;
 
-  const days = trafficPeriod === '24h' ? 24 : trafficPeriod === '7d' ? 7 : 30;
-  const trafficHistory = generateTrafficHistory(days);
+  const trafficHistory = trafficHistoryData.map((p) => ({
+    date: formatTrafficDate(p.date),
+    upload: p.upload,
+    download: p.download,
+  }));
 
   // Simulated "online users" count
   const onlineUsers = Math.max(0, Math.floor((stats?.users.active ?? 0) * 0.6));

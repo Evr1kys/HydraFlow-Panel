@@ -7,8 +7,9 @@ import {
   SegmentedControl,
   Table,
   Box,
-  Loader,
 } from '@mantine/core';
+import { LoadingSkeleton } from '../components/LoadingSkeleton';
+import { EmptyState } from '../components/EmptyState';
 import { notifications } from '@mantine/notifications';
 import {
   IconChartBar,
@@ -155,18 +156,7 @@ export function TrafficHistoryPage() {
   }, [fetchData]);
 
   if (loading) {
-    return (
-      <Box
-        style={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          minHeight: 400,
-        }}
-      >
-        <Loader color="teal" />
-      </Box>
-    );
+    return <LoadingSkeleton variant="dashboard" />;
   }
 
   const history = data?.history ?? [];
@@ -343,19 +333,11 @@ export function TrafficHistoryPage() {
 
       {history.length === 0 && (
         <Paper p="xl" mt="md" style={cardStyle}>
-          <Box
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: 8,
-            }}
-          >
-            <IconChartBar size={40} color="#373A40" stroke={1} />
-            <Text ta="center" size="sm" style={{ color: '#5c5f66' }}>
-              {t('trafficHistory.noData')}
-            </Text>
-          </Box>
+          <EmptyState
+            icon={IconChartBar}
+            message={t('trafficHistory.noData')}
+            minHeight={200}
+          />
         </Paper>
       )}
     </Stack>

@@ -14,12 +14,21 @@ const zh = {
   'sidebar.protocolHealth': 'Protocol Health',
   'sidebar.devices': 'Devices (HWID)',
   'sidebar.billing': 'Billing',
+  'sidebar.userBilling': 'User Billing',
   'sidebar.plugins': 'Plugins',
   'sidebar.sessions': 'Sessions',
   'sidebar.configuration': 'Configuration',
   'sidebar.configEditor': 'Config Editor',
   'sidebar.migration': 'Migration',
   'sidebar.logout': 'Logout',
+  'sidebar.bot': 'BOT',
+  'sidebar.botOverview': 'Overview',
+  'sidebar.botUsers': 'Bot Users',
+  'sidebar.botPlans': 'Plans',
+  'sidebar.botPromos': 'Promos',
+  'sidebar.botButtons': 'Buttons',
+  'sidebar.botTransactions': 'Transactions',
+  'sidebar.botBroadcast': 'Broadcast',
   'dashboard.title': 'Dashboard',
   'dashboard.xrayRunning': 'Xray Running',
   'dashboard.xrayStopped': 'Xray Stopped',
@@ -276,6 +285,127 @@ const zh = {
   'language.en': 'English',
   'language.ru': 'Russian',
   'language.zh': 'Chinese',
+
+  // Error boundary / errors
+  'error.boundaryTitle': '出现问题',
+  'error.boundarySubtitle': '捕获到意外错误',
+  'error.reload': '重新加载',
+  'error.tryAgain': '重试',
+  'error.showDetails': '显示详情',
+  'error.hideDetails': '隐藏详情',
+  'error.stackTrace': '堆栈跟踪',
+  'error.componentStack': '组件堆栈',
+  'error.requestFailed': '请求失败',
+  'error.networkError': '网络错误',
+  'error.unknown': '未知错误',
+
+  // Empty state
+  'empty.noItems': '暂无数据',
+  'empty.noResults': '未找到结果',
+  'empty.startBy': '开始创建一个',
+  'empty.create': '创建',
+
+  // Validation
+  'validation.required': '此字段为必填项',
+  'validation.email': '邮箱地址无效',
+  'validation.password': '密码至少需要 8 个字符',
+  'validation.port': '端口必须在 1 到 65535 之间',
+  'validation.url': 'URL 无效',
+  'validation.uuid': 'UUID 无效',
+  'validation.ipAddress': 'IP 地址无效',
+  'validation.hostOrIp': '主机或 IP 地址无效',
+  'validation.json': '必须是有效的 JSON',
+  'validation.positive': '必须是正数',
+  'validation.trafficGb': '必须在 0 到 100000 GB 之间',
+  'validation.maxUsers': '必须是正整数',
+  'validation.minLength': '太短',
+  'validation.maxLength': '太长',
+  'validation.number': '必须是数字',
+  'validation.domain': '域名无效',
+
+  // Billing page
+  'billing.title': '账单',
+  'billing.noData': '暂无账单记录',
+  'billing.amount': '金额',
+  'billing.currency': '货币',
+  'billing.provider': '提供商',
+  'billing.status': '状态',
+
+  // Plugins page
+  'plugins.title': '插件',
+  'plugins.type': '插件类型',
+  'plugins.config': '配置 (JSON)',
+  'plugins.noPlugins': '未启用插件',
+  'plugins.add': '添加插件',
+
+  // Squads page
+  'squads.title': '分队',
+  'squads.noSquads': '暂无分队',
+  'squads.create': '创建分队',
+  'squads.name': '名称',
+  'squads.description': '描述',
+  'squads.maxUsers': '最大用户数',
+
+  // Sessions page
+  'sessions.title': '会话',
+  'sessions.noSessions': '暂无活动会话',
+
+  // Migration page
+  'migration.title': '迁移',
+  'migration.noTasks': '暂无迁移任务',
+
+  // Role / access
+  'access.readOnly': '只读访问',
+  'access.denied': '访问被拒绝',
+  'access.insufficientPermissions': '权限不足',
+
+  // Backup page
+  'backup.title': '备份',
+  'backup.createNow': '立即创建备份',
+  'backup.date': '日期',
+  'backup.type': '类型',
+  'backup.status': '状态',
+  'backup.size': '大小',
+  'backup.actions': '操作',
+  'backup.download': '下载',
+  'backup.delete': '删除',
+  'backup.restore': '恢复',
+  'backup.noBackups': '暂无备份',
+  'backup.created': '备份已创建',
+  'backup.deleted': '备份已删除',
+  'backup.restored': '恢复完成',
+  'backup.createError': '创建备份失败',
+  'backup.deleteError': '删除备份失败',
+  'backup.restoreError': '恢复失败',
+  'backup.downloadError': '下载失败',
+  'backup.loadError': '加载备份列表失败',
+  'backup.restoreTitle': '恢复数据库',
+  'backup.restoreWarning': '此操作将用所选备份的内容替换当前数据库，且无法撤销。',
+  'backup.confirmRestore': '确认恢复',
+
+  // Email settings
+  'email.title': '邮件',
+  'email.smtp': 'SMTP 配置',
+  'email.smtpDesc': '用于发送通知的外发邮件服务器',
+  'email.host': 'SMTP 主机',
+  'email.port': '端口',
+  'email.user': '用户名',
+  'email.password': '密码',
+  'email.fromEmail': '发件邮箱',
+  'email.fromName': '发件人名称',
+  'email.secure': '使用 TLS',
+  'email.testTo': '发送测试到',
+  'email.sendTest': '发送测试邮件',
+  'email.saved': '邮件设置已保存',
+  'email.saveError': '保存邮件设置失败',
+  'email.testSent': '测试邮件已发送',
+  'email.testFailed': '发送测试邮件失败',
+
+  // Telegram settings
+  'telegram.alerts': 'Telegram 通知',
+  'telegram.alertsDesc': '在 Telegram 中接收通知',
+
+  'sidebar.backup': '备份',
 };
 
 export default zh;

@@ -13,10 +13,15 @@ model Admin {
   password      String
   totpSecret    String?
   totpEnabled   Boolean        @default(false)
+  role          String         @default("admin") // superadmin | admin | operator | readonly
+  enabled       Boolean        @default(true)
+  lastLoginAt   DateTime?
   createdAt     DateTime       @default(now())
   sessions      Session[]
   passkeys      Passkey[]
   oauthAccounts OAuthAccount[]
+  auditLogs     AuditLog[]
+  apiKeys       ApiKey[]
 }
 
 model Passkey {
@@ -54,6 +59,8 @@ model User {
   expiryDate      DateTime?
   maxDevices      Int             @default(3)
   remark          String?
+  telegramId      BigInt?
+  botUserId       String?         @unique
   internalSquadId String?
   internalSquad   InternalSquad?  @relation(fields: [internalSquadId], references: [id], onDelete: SetNull)
   externalSquadId String?
@@ -253,4 +260,216 @@ model ExternalSquad {
   subPageBrand  String?
   createdAt     DateTime @default(now())
   users         User[]
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  adminId    String?
+  admin      Admin?   @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  action     String   // user.create, user.delete, settings.update, etc.
+  resource   String   // users | nodes | settings | squads | ...
+  resourceId String?
+  payload    Json?
+  ip         String?
+  userAgent  String?
+  success    Boolean  @default(true)
+  errorMsg   String?
+  createdAt  DateTime @default(now())
+  @@index([adminId, createdAt])
+  @@index([resource, resourceId])
+  @@index([action, createdAt])
+}
+
+model ApiKey {
+  id         String    @id @default(uuid())
+  adminId    String
+  admin      Admin     @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  name       String
+  keyHash    String    @unique
+  keyPrefix  String    // first 8 chars for display
+  scopes     String[]  @default([]) // users:read, users:write, nodes:read, ...
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  revoked    Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  @@index([adminId])
+  @@index([keyHash])
+}
+
+model BackupJob {
+  id         String    @id @default(uuid())
+  type       String    // manual | scheduled
+  status     String    @default("pending") // pending | running | completed | failed
+  filePath   String?
+  fileSize   BigInt?
+  errorMsg   String?
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  @@index([status, startedAt])
+}
+
+model EmailSettings {
+  id         String  @id @default("main")
+  enabled    Boolean @default(false)
+  smtpHost   String?
+  smtpPort   Int     @default(587)
+  smtpUser   String?
+  smtpPass   String?
+  smtpSecure Boolean @default(true)
+  fromEmail  String?
+  fromName   String  @default("HydraFlow")
+  updatedAt  DateTime @updatedAt
+}
+
+model UserSubscription {
+  id             String    @id @default(uuid())
+  userId         String
+  plan           String    // monthly | yearly | custom
+  priceAmount    Float
+  priceCurrency  String    @default("USD")
+  provider       String    // yookassa | stripe | crypto | manual
+  externalId     String?   // provider's payment/subscription id
+  status         String    @default("pending") // pending | active | cancelled | expired
+  trafficGb      Int?
+  daysDuration   Int
+  startDate      DateTime  @default(now())
+  endDate        DateTime?
+  cancelledAt    DateTime?
+  autoRenew      Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  @@index([userId])
+  @@index([status, endDate])
+}
+
+model WebhookDelivery {
+  id          String    @id @default(uuid())
+  webhookId   String
+  event       String
+  payload     Json
+  status      String    @default("pending") // pending | success | failed | dead
+  attempts    Int       @default(0)
+  lastError   String?
+  nextRetryAt DateTime?
+  deliveredAt DateTime?
+  createdAt   DateTime  @default(now())
+  @@index([status, nextRetryAt])
+  @@index([webhookId, createdAt])
+}
+
+model BotUser {
+  id           String           @id @default(uuid())
+  telegramId   BigInt           @unique
+  username     String?
+  firstName    String?
+  languageCode String           @default("ru")
+  balance      Decimal          @default(0) @db.Decimal(10, 2)
+  totalSpent   Decimal          @default(0) @db.Decimal(10, 2)
+  referredBy   String?
+  banned       Boolean          @default(false)
+  userId       String?
+  createdAt    DateTime         @default(now())
+  lastSeenAt   DateTime         @default(now())
+  transactions BotTransaction[]
+  tickets      SupportTicket[]
+
+  @@index([telegramId])
+}
+
+model BotButton {
+  id             String   @id @default(uuid())
+  menuType       String
+  buttonId       String
+  text           String
+  callbackData   String?
+  url            String?
+  rowPosition    Int      @default(0)
+  columnPosition Int      @default(0)
+  buttonWidth    Int      @default(1)
+  sortOrder      Int      @default(0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([menuType, buttonId])
+  @@index([menuType, sortOrder])
+}
+
+model BotMenuConfig {
+  menuType     String   @id
+  keyboardMode String   @default("inline") // inline | reply
+  resize       Boolean  @default(true)
+  oneTime      Boolean  @default(false)
+  title        String?
+  updatedAt    DateTime @updatedAt
+}
+
+model BotPlan {
+  id           String   @id @default(uuid())
+  name         String
+  daysDuration Int
+  trafficGb    Int?
+  price        Decimal  @db.Decimal(10, 2)
+  currency     String   @default("RUB")
+  enabled      Boolean  @default(true)
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+}
+
+model BotTransaction {
+  id                String    @id @default(uuid())
+  botUserId         String
+  botUser           BotUser   @relation(fields: [botUserId], references: [id])
+  type              String
+  amount            Decimal   @db.Decimal(10, 2)
+  currency          String    @default("RUB")
+  provider          String
+  providerPaymentId String?
+  status            String    @default("pending")
+  planId            String?
+  promoCode         String?
+  createdAt         DateTime  @default(now())
+  completedAt       DateTime?
+
+  @@index([botUserId, createdAt])
+  @@index([status])
+}
+
+model BotPromoCode {
+  id              String    @id @default(uuid())
+  code            String    @unique
+  discountPercent Int?
+  discountAmount  Decimal?  @db.Decimal(10, 2)
+  maxUses         Int?
+  usedCount       Int       @default(0)
+  validFrom       DateTime  @default(now())
+  validUntil      DateTime?
+  enabled         Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+}
+
+model SupportTicket {
+  id        String           @id @default(uuid())
+  botUserId String
+  botUser   BotUser          @relation(fields: [botUserId], references: [id])
+  subject   String
+  status    String           @default("open")
+  messages  SupportMessage[]
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@index([status])
+}
+
+model SupportMessage {
+  id        String        @id @default(uuid())
+  ticketId  String
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  fromAdmin Boolean       @default(false)
+  text      String
+  createdAt DateTime      @default(now())
+}
+
+model BotSetting {
+  key   String @id
+  value String
 }

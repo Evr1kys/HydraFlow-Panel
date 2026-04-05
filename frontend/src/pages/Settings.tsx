@@ -11,10 +11,14 @@ import {
   PasswordInput,
   NumberInput,
   Box,
-  Loader,
   Badge,
   Table,
 } from '@mantine/core';
+import { LoadingSkeleton } from '../components/LoadingSkeleton';
+import { EmptyState } from '../components/EmptyState';
+import { IconAlertTriangle } from '@tabler/icons-react';
+import { extractErrorMessage } from '../api/client';
+import { usePermissions } from '../hooks/usePermissions';
 import { notifications } from '@mantine/notifications';
 import {
   IconShieldCheck,
@@ -33,9 +37,20 @@ import {
   IconTrash,
   IconBrandGithub,
   IconUnlink,
+  IconMail,
+  IconMailCheck,
+  IconWebhook,
+  IconRefresh,
 } from '@tabler/icons-react';
 import { useTranslation } from 'react-i18next';
-import { getSettings, updateSettings } from '../api/settings';
+import {
+  getSettings,
+  updateSettings,
+  getEmailSettings,
+  updateEmailSettings,
+  sendTestEmail,
+  type EmailSettings as EmailSettingsType,
+} from '../api/settings';
 import {
   changePassword,
   getPasskeyRegisterOptions,
@@ -46,7 +61,15 @@ import {
   unlinkOAuthAccount,
 } from '../api/auth';
 import type { PasskeyInfo, OAuthAccount } from '../api/auth';
-import type { Settings } from '../types';
+import type { Settings, Webhook } from '../types';
+import {
+  getWebhooks,
+  createWebhook,
+  deleteWebhook,
+  getWebhookDeliveries,
+  retryWebhookDelivery,
+  type WebhookDelivery,
+} from '../api/webhooks';
 
 const cardStyle = {
   backgroundColor: '#1E2128',
@@ -125,8 +148,10 @@ function providerIcon(provider: string) {
 
 export function SettingsPage() {
   const { t } = useTranslation();
+  const permissions = usePermissions();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -140,10 +165,25 @@ export function SettingsPage() {
   const [passkeys, setPasskeys] = useState<PasskeyInfo[]>([]);
   const [addingPasskey, setAddingPasskey] = useState(false);
   const [oauthAccounts, setOauthAccounts] = useState<OAuthAccount[]>([]);
+  const [emailSettings, setEmailSettings] = useState<EmailSettingsType | null>(null);
+  const [savingEmail, setSavingEmail] = useState(false);
+  const [testingEmail, setTestingEmail] = useState(false);
+  const [testEmailTo, setTestEmailTo] = useState('');
+  const [webhooks, setWebhooks] = useState<Webhook[]>([]);
+  const [webhookDeliveries, setWebhookDeliveries] = useState<Record<string, WebhookDelivery[]>>({});
+  const [expandedWebhookId, setExpandedWebhookId] = useState<string | null>(null);
+  const [newWebhookUrl, setNewWebhookUrl] = useState('');
+  const [newWebhookSecret, setNewWebhookSecret] = useState('');
+  const [newWebhookEvents, setNewWebhookEvents] = useState('user.created,user.renewed');
+  const [addingWebhook, setAddingWebhook] = useState(false);
 
   const fetchSettings = useCallback(async () => {
+    setLoadError(null);
     try { const data = await getSettings(); setSettings(data); }
-    catch { notifications.show({ title: t('common.error'), message: t('notification.settingsError'), color: 'red' }); }
+    catch (err) {
+      setLoadError(extractErrorMessage(err));
+      notifications.show({ title: t('common.error'), message: t('notification.settingsError'), color: 'red' });
+    }
     finally { setLoading(false); }
   }, [t]);
 
@@ -155,7 +195,106 @@ export function SettingsPage() {
     try { const data = await getLinkedOAuthAccounts(); setOauthAccounts(data); } catch { /* ignore */ }
   }, []);
 
-  useEffect(() => { fetchSettings(); fetchPasskeys(); fetchOAuthAccounts(); }, [fetchSettings, fetchPasskeys, fetchOAuthAccounts]);
+  const fetchEmailSettings = useCallback(async () => {
+    try { const data = await getEmailSettings(); setEmailSettings(data); } catch { /* ignore */ }
+  }, []);
+
+  const fetchWebhooks = useCallback(async () => {
+    try { const data = await getWebhooks(); setWebhooks(data); } catch { /* ignore */ }
+  }, []);
+
+  const fetchWebhookDeliveries = useCallback(async (webhookId: string) => {
+    try {
+      const data = await getWebhookDeliveries(webhookId, 10);
+      setWebhookDeliveries((prev) => ({ ...prev, [webhookId]: data }));
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { fetchSettings(); fetchPasskeys(); fetchOAuthAccounts(); fetchEmailSettings(); fetchWebhooks(); }, [fetchSettings, fetchPasskeys, fetchOAuthAccounts, fetchEmailSettings, fetchWebhooks]);
+
+  const toggleWebhookExpanded = async (id: string) => {
+    if (expandedWebhookId === id) {
+      setExpandedWebhookId(null);
+      return;
+    }
+    setExpandedWebhookId(id);
+    await fetchWebhookDeliveries(id);
+  };
+
+  const handleAddWebhook = async () => {
+    if (!newWebhookUrl || !newWebhookSecret) return;
+    setAddingWebhook(true);
+    try {
+      const events = newWebhookEvents.split(',').map((s) => s.trim()).filter(Boolean);
+      await createWebhook({ url: newWebhookUrl, secret: newWebhookSecret, events });
+      setNewWebhookUrl('');
+      setNewWebhookSecret('');
+      notifications.show({ title: t('common.success'), message: 'Webhook added', color: 'teal' });
+      await fetchWebhooks();
+    } catch {
+      notifications.show({ title: t('common.error'), message: 'Failed to add webhook', color: 'red' });
+    } finally {
+      setAddingWebhook(false);
+    }
+  };
+
+  const handleDeleteWebhook = async (id: string) => {
+    try {
+      await deleteWebhook(id);
+      notifications.show({ title: t('common.success'), message: 'Webhook deleted', color: 'teal' });
+      await fetchWebhooks();
+    } catch {
+      notifications.show({ title: t('common.error'), message: 'Failed to delete webhook', color: 'red' });
+    }
+  };
+
+  const handleRetryDelivery = async (webhookId: string, deliveryId: string) => {
+    try {
+      await retryWebhookDelivery(webhookId, deliveryId);
+      notifications.show({ title: t('common.success'), message: 'Retry scheduled', color: 'teal' });
+      await fetchWebhookDeliveries(webhookId);
+    } catch {
+      notifications.show({ title: t('common.error'), message: 'Failed to schedule retry', color: 'red' });
+    }
+  };
+
+  const updateEmail = (field: keyof EmailSettingsType, value: EmailSettingsType[keyof EmailSettingsType]) => {
+    if (!emailSettings) return;
+    setEmailSettings({ ...emailSettings, [field]: value });
+  };
+
+  const handleSaveEmail = async () => {
+    if (!emailSettings) return;
+    setSavingEmail(true);
+    try {
+      const { id, updatedAt, ...data } = emailSettings;
+      void id; void updatedAt;
+      const updated = await updateEmailSettings(data);
+      setEmailSettings(updated);
+      notifications.show({ title: t('common.saved'), message: t('email.saved'), color: 'teal' });
+    } catch {
+      notifications.show({ title: t('common.error'), message: t('email.saveError'), color: 'red' });
+    } finally {
+      setSavingEmail(false);
+    }
+  };
+
+  const handleSendTestEmail = async () => {
+    if (!testEmailTo) return;
+    setTestingEmail(true);
+    try {
+      const res = await sendTestEmail(testEmailTo);
+      notifications.show({
+        title: res.success ? t('common.success') : t('common.error'),
+        message: res.success ? t('email.testSent') : t('email.testFailed'),
+        color: res.success ? 'teal' : 'red',
+      });
+    } catch {
+      notifications.show({ title: t('common.error'), message: t('email.testFailed'), color: 'red' });
+    } finally {
+      setTestingEmail(false);
+    }
+  };
 
   const handleSave = async () => {
     if (!settings) return;
@@ -213,13 +352,34 @@ export function SettingsPage() {
 
   const update = (field: keyof Settings, value: Settings[keyof Settings]) => { if (!settings) return; setSettings({ ...settings, [field]: value }); };
 
-  if (loading || !settings) { return (<Box style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}><Loader color="teal" /></Box>); }
+  if (loading) {
+    return <LoadingSkeleton variant="form" rows={8} />;
+  }
+  if (loadError) {
+    return (
+      <EmptyState
+        icon={IconAlertTriangle}
+        title={t('common.error')}
+        message={loadError}
+      />
+    );
+  }
+  if (!settings) {
+    return (
+      <EmptyState
+        icon={IconAlertTriangle}
+        message={t('notification.settingsError')}
+      />
+    );
+  }
 
   return (
     <Stack gap={0}>
       <Group justify="space-between" mb="lg">
         <Text size="22px" fw={700} style={{ color: '#C1C2C5' }}>{t('settings.title')}</Text>
-        <Button leftSection={<IconDeviceFloppy size={16} />} variant="gradient" gradient={{ from: 'teal', to: 'cyan' }} radius="md" loading={saving} onClick={handleSave}>{t('settings.saveRestart')}</Button>
+        {permissions.canManageSettings && (
+          <Button leftSection={<IconDeviceFloppy size={16} />} variant="gradient" gradient={{ from: 'teal', to: 'cyan' }} radius="md" loading={saving} onClick={handleSave}>{t('settings.saveRestart')}</Button>
+        )}
       </Group>
 
       <Paper p="lg" style={cardStyle} mb="md">
@@ -233,8 +393,8 @@ export function SettingsPage() {
             <Group justify="space-between"><Group gap={8}><IconShieldCheck size={18} color={settings.realityEnabled ? '#20C997' : '#5c5f66'} /><Text fw={600} size="sm" style={{ color: settings.realityEnabled ? '#C1C2C5' : '#5c5f66' }}>VLESS+Reality</Text></Group><Switch checked={settings.realityEnabled} onChange={(e) => update('realityEnabled', e.currentTarget.checked)} color="teal" size="sm" /></Group>
           </Box>
           <Stack gap="sm" p="lg">
-            <NumberInput label="Port" value={settings.realityPort} onChange={(v) => update('realityPort', Number(v))} styles={inputStyles} />
-            <TextInput label="SNI" value={settings.realitySni} onChange={(e) => update('realitySni', e.currentTarget.value)} styles={inputStyles} />
+            <NumberInput label="Port" value={settings.realityPort} onChange={(v) => update('realityPort', Number(v))} min={1} max={65535} error={settings.realityPort < 1 || settings.realityPort > 65535 ? t('validation.port') : null} styles={inputStyles} />
+            <TextInput label="SNI" value={settings.realitySni} onChange={(e) => update('realitySni', e.currentTarget.value)} error={settings.realitySni && !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i.test(settings.realitySni) ? t('validation.domain') : null} styles={inputStyles} />
             <TextInput label="Public Key" value={settings.realityPbk ?? ''} onChange={(e) => update('realityPbk', e.currentTarget.value)} styles={inputStyles} />
             <TextInput label="Private Key" value={settings.realityPvk ?? ''} onChange={(e) => update('realityPvk', e.currentTarget.value)} styles={inputStyles} />
             <TextInput label="Short ID" value={settings.realitySid ?? ''} onChange={(e) => update('realitySid', e.currentTarget.value)} styles={inputStyles} />
@@ -246,8 +406,8 @@ export function SettingsPage() {
             <Group justify="space-between"><Group gap={8}><IconWorld size={18} color={settings.wsEnabled ? '#339AF0' : '#5c5f66'} /><Text fw={600} size="sm" style={{ color: settings.wsEnabled ? '#C1C2C5' : '#5c5f66' }}>VLESS+WebSocket</Text></Group><Switch checked={settings.wsEnabled} onChange={(e) => update('wsEnabled', e.currentTarget.checked)} color="blue" size="sm" /></Group>
           </Box>
           <Stack gap="sm" p="lg">
-            <NumberInput label="Port" value={settings.wsPort} onChange={(v) => update('wsPort', Number(v))} styles={inputStyles} />
-            <TextInput label="Path" value={settings.wsPath ?? ''} onChange={(e) => update('wsPath', e.currentTarget.value)} styles={inputStyles} />
+            <NumberInput label="Port" value={settings.wsPort} onChange={(v) => update('wsPort', Number(v))} min={1} max={65535} error={settings.wsPort < 1 || settings.wsPort > 65535 ? t('validation.port') : null} styles={inputStyles} />
+            <TextInput label="Path" value={settings.wsPath ?? ''} onChange={(e) => update('wsPath', e.currentTarget.value)} error={settings.wsPath && !settings.wsPath.startsWith('/') ? 'Path must start with /' : null} styles={inputStyles} />
             <TextInput label="Host" value={settings.wsHost ?? ''} onChange={(e) => update('wsHost', e.currentTarget.value)} styles={inputStyles} />
             <Button variant="light" color="blue" size="xs" radius="md" leftSection={<IconPlugConnected size={14} />} loading={testingConnection === 'websocket'} onClick={() => handleTestConnection('websocket')} styles={{ root: { border: '1px solid rgba(51,154,240,0.2)' } }}>{t('settings.testConnection')}</Button>
           </Stack>
@@ -257,7 +417,7 @@ export function SettingsPage() {
             <Group justify="space-between"><Group gap={8}><IconLock size={18} color={settings.ssEnabled ? '#845EF7' : '#5c5f66'} /><Text fw={600} size="sm" style={{ color: settings.ssEnabled ? '#C1C2C5' : '#5c5f66' }}>Shadowsocks</Text></Group><Switch checked={settings.ssEnabled} onChange={(e) => update('ssEnabled', e.currentTarget.checked)} color="grape" size="sm" /></Group>
           </Box>
           <Stack gap="sm" p="lg">
-            <NumberInput label="Port" value={settings.ssPort} onChange={(v) => update('ssPort', Number(v))} styles={inputStyles} />
+            <NumberInput label="Port" value={settings.ssPort} onChange={(v) => update('ssPort', Number(v))} min={1} max={65535} error={settings.ssPort < 1 || settings.ssPort > 65535 ? t('validation.port') : null} styles={inputStyles} />
             <TextInput label="Method" value={settings.ssMethod} onChange={(e) => update('ssMethod', e.currentTarget.value)} styles={inputStyles} />
             <PasswordInput label="Password" value={settings.ssPassword ?? ''} onChange={(e) => update('ssPassword', e.currentTarget.value)} styles={inputStyles} />
             <Button variant="light" color="grape" size="xs" radius="md" leftSection={<IconPlugConnected size={14} />} loading={testingConnection === 'shadowsocks'} onClick={() => handleTestConnection('shadowsocks')} styles={{ root: { border: '1px solid rgba(132,94,247,0.2)' } }}>{t('settings.testConnection')}</Button>
@@ -304,12 +464,314 @@ export function SettingsPage() {
 
       {oauthAccounts.length > 0 && (<><SectionTitle>Linked Accounts</SectionTitle><Paper p="lg" style={cardStyle}><Stack gap="sm">{oauthAccounts.map((acct) => (<Group key={acct.id} justify="space-between" style={{ padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.03)' }}><Group gap={8}>{providerIcon(acct.provider)}<Box><Text size="sm" fw={500} style={{ color: '#C1C2C5', textTransform: 'capitalize' }}>{acct.provider}</Text>{acct.email && <Text size="xs" style={{ color: '#5c5f66' }}>{acct.email}</Text>}</Box><Badge size="xs" variant="light" color="gray">{acct.providerId}</Badge></Group><Button size="xs" variant="subtle" color="red" radius="md" leftSection={<IconUnlink size={12} />} onClick={() => handleUnlinkOAuth(acct.id)}>Unlink</Button></Group>))}</Stack></Paper></>)}
 
+      <SectionTitle>{t('email.title')}</SectionTitle>
+      <Paper p="lg" style={cardStyle}>
+        {emailSettings ? (
+          <Stack gap="md">
+            <Group justify="space-between">
+              <Group gap={8}>
+                <Box style={{ width: 32, height: 32, borderRadius: '50%', backgroundColor: 'rgba(51,154,240,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <IconMail size={16} color="#339AF0" />
+                </Box>
+                <Box>
+                  <Text size="sm" fw={600} style={{ color: '#C1C2C5' }}>{t('email.smtp')}</Text>
+                  <Text size="xs" style={{ color: '#5c5f66' }}>{t('email.smtpDesc')}</Text>
+                </Box>
+              </Group>
+              <Switch
+                checked={emailSettings.enabled}
+                onChange={(e) => updateEmail('enabled', e.currentTarget.checked)}
+                color="teal"
+                size="sm"
+              />
+            </Group>
+
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+              <TextInput
+                label={t('email.host')}
+                placeholder="smtp.example.com"
+                value={emailSettings.smtpHost ?? ''}
+                onChange={(e) => updateEmail('smtpHost', e.currentTarget.value)}
+                styles={inputStyles}
+              />
+              <NumberInput
+                label={t('email.port')}
+                value={emailSettings.smtpPort}
+                onChange={(v) => updateEmail('smtpPort', Number(v))}
+                styles={inputStyles}
+              />
+              <TextInput
+                label={t('email.user')}
+                value={emailSettings.smtpUser ?? ''}
+                onChange={(e) => updateEmail('smtpUser', e.currentTarget.value)}
+                styles={inputStyles}
+              />
+              <PasswordInput
+                label={t('email.password')}
+                value={emailSettings.smtpPass ?? ''}
+                onChange={(e) => updateEmail('smtpPass', e.currentTarget.value)}
+                styles={inputStyles}
+              />
+              <TextInput
+                label={t('email.fromEmail')}
+                placeholder="noreply@example.com"
+                value={emailSettings.fromEmail ?? ''}
+                onChange={(e) => updateEmail('fromEmail', e.currentTarget.value)}
+                styles={inputStyles}
+              />
+              <TextInput
+                label={t('email.fromName')}
+                value={emailSettings.fromName}
+                onChange={(e) => updateEmail('fromName', e.currentTarget.value)}
+                styles={inputStyles}
+              />
+            </SimpleGrid>
+
+            <Group justify="space-between">
+              <Group gap={8}>
+                <Text size="sm" style={{ color: '#909296' }}>{t('email.secure')}</Text>
+                <Switch
+                  checked={emailSettings.smtpSecure}
+                  onChange={(e) => updateEmail('smtpSecure', e.currentTarget.checked)}
+                  color="teal"
+                  size="sm"
+                />
+              </Group>
+              <Button
+                variant="light"
+                color="teal"
+                radius="md"
+                size="sm"
+                leftSection={<IconDeviceFloppy size={14} />}
+                loading={savingEmail}
+                onClick={handleSaveEmail}
+                styles={{ root: { border: '1px solid rgba(32,201,151,0.2)' } }}
+              >
+                {t('common.save')}
+              </Button>
+            </Group>
+
+            <Group align="end" gap="sm">
+              <TextInput
+                label={t('email.testTo')}
+                placeholder="you@example.com"
+                value={testEmailTo}
+                onChange={(e) => setTestEmailTo(e.currentTarget.value)}
+                styles={inputStyles}
+                style={{ flex: 1 }}
+              />
+              <Button
+                variant="light"
+                color="blue"
+                radius="md"
+                size="sm"
+                leftSection={<IconMailCheck size={14} />}
+                loading={testingEmail}
+                onClick={handleSendTestEmail}
+                disabled={!emailSettings.enabled || !testEmailTo}
+                styles={{ root: { border: '1px solid rgba(51,154,240,0.2)', height: 36 } }}
+              >
+                {t('email.sendTest')}
+              </Button>
+            </Group>
+          </Stack>
+        ) : (
+          <Text size="sm" style={{ color: '#5c5f66' }}>{t('common.loading')}</Text>
+        )}
+      </Paper>
+
+      <SectionTitle>Webhooks</SectionTitle>
+      <Paper p="lg" style={cardStyle}>
+        <Group gap={8} mb="md">
+          <IconWebhook size={18} color="#339AF0" />
+          <Text size="sm" fw={600} style={{ color: '#C1C2C5' }}>Delivery Endpoints</Text>
+        </Group>
+        <Stack gap="sm" mb="md">
+          <Group gap="xs" align="end" wrap="wrap">
+            <TextInput
+              label="URL"
+              placeholder="https://example.com/webhook"
+              value={newWebhookUrl}
+              onChange={(e) => setNewWebhookUrl(e.currentTarget.value)}
+              error={
+                newWebhookUrl.trim() &&
+                !/^https?:\/\/[^\s/$.?#].[^\s]*$/i.test(newWebhookUrl.trim())
+                  ? t('validation.url')
+                  : null
+              }
+              styles={inputStyles}
+              style={{ flex: 2, minWidth: 220 }}
+            />
+            <TextInput
+              label="Events (comma-separated)"
+              placeholder="user.created,user.renewed"
+              value={newWebhookEvents}
+              onChange={(e) => setNewWebhookEvents(e.currentTarget.value)}
+              error={
+                newWebhookEvents.trim() === '' ? t('validation.required') : null
+              }
+              styles={inputStyles}
+              style={{ flex: 2, minWidth: 200 }}
+            />
+            <PasswordInput
+              label="Secret"
+              value={newWebhookSecret}
+              onChange={(e) => setNewWebhookSecret(e.currentTarget.value)}
+              error={
+                newWebhookSecret && newWebhookSecret.length < 8
+                  ? t('validation.minLength')
+                  : null
+              }
+              styles={inputStyles}
+              style={{ flex: 1, minWidth: 160 }}
+            />
+            <Button
+              variant="light"
+              color="blue"
+              radius="md"
+              leftSection={<IconPlus size={14} />}
+              loading={addingWebhook}
+              onClick={handleAddWebhook}
+              disabled={
+                !newWebhookUrl ||
+                !/^https?:\/\/[^\s/$.?#].[^\s]*$/i.test(newWebhookUrl.trim()) ||
+                newWebhookSecret.length < 8 ||
+                !newWebhookEvents.trim()
+              }
+              styles={{ root: { border: '1px solid rgba(51,154,240,0.2)', height: 36 } }}
+            >
+              Add
+            </Button>
+          </Group>
+        </Stack>
+        {webhooks.length > 0 ? (
+          <Stack gap="xs">
+            {webhooks.map((wh) => {
+              const deliveries = webhookDeliveries[wh.id] ?? [];
+              const expanded = expandedWebhookId === wh.id;
+              return (
+                <Box
+                  key={wh.id}
+                  style={{
+                    backgroundColor: '#161B23',
+                    border: '1px solid rgba(255,255,255,0.06)',
+                    borderRadius: 8,
+                    overflow: 'hidden',
+                  }}
+                >
+                  <Group justify="space-between" px="md" py="sm" wrap="nowrap">
+                    <Box style={{ overflow: 'hidden', flex: 1 }}>
+                      <Text size="sm" fw={500} ff="monospace" style={{ color: '#C1C2C5', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {wh.url}
+                      </Text>
+                      <Group gap={4} mt={2}>
+                        {wh.events.map((ev) => (
+                          <Badge key={ev} size="xs" variant="light" color="gray">{ev}</Badge>
+                        ))}
+                      </Group>
+                    </Box>
+                    <Group gap="xs">
+                      <Button
+                        size="xs"
+                        variant="subtle"
+                        color="gray"
+                        radius="md"
+                        onClick={() => toggleWebhookExpanded(wh.id)}
+                      >
+                        {expanded ? 'Hide' : 'Deliveries'}
+                      </Button>
+                      <Button
+                        size="xs"
+                        variant="subtle"
+                        color="red"
+                        radius="md"
+                        onClick={() => handleDeleteWebhook(wh.id)}
+                        leftSection={<IconTrash size={12} />}
+                      >
+                        Remove
+                      </Button>
+                    </Group>
+                  </Group>
+                  {expanded && (
+                    <Box style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                      <Table horizontalSpacing="md" verticalSpacing="xs">
+                        <Table.Thead>
+                          <Table.Tr>
+                            <Table.Th style={thStyle}>Event</Table.Th>
+                            <Table.Th style={thStyle}>Status</Table.Th>
+                            <Table.Th style={thStyle}>Attempts</Table.Th>
+                            <Table.Th style={thStyle}>When</Table.Th>
+                            <Table.Th style={{ ...thStyle, width: 90 }}>Actions</Table.Th>
+                          </Table.Tr>
+                        </Table.Thead>
+                        <Table.Tbody>
+                          {deliveries.map((d) => {
+                            const color =
+                              d.status === 'success' ? 'teal'
+                                : d.status === 'pending' ? 'yellow'
+                                  : d.status === 'failed' ? 'orange'
+                                    : 'red';
+                            return (
+                              <Table.Tr key={d.id}>
+                                <Table.Td>
+                                  <Text size="xs" ff="monospace" style={{ color: '#C1C2C5' }}>{d.event}</Text>
+                                </Table.Td>
+                                <Table.Td>
+                                  <Badge variant="light" color={color} size="xs">{d.status}</Badge>
+                                </Table.Td>
+                                <Table.Td>
+                                  <Text size="xs" style={{ color: '#909296' }}>{d.attempts}</Text>
+                                </Table.Td>
+                                <Table.Td>
+                                  <Text size="xs" style={{ color: '#909296' }}>
+                                    {new Date(d.createdAt).toLocaleString()}
+                                  </Text>
+                                </Table.Td>
+                                <Table.Td>
+                                  {(d.status === 'failed' || d.status === 'dead') && (
+                                    <Button
+                                      size="xs"
+                                      variant="subtle"
+                                      color="teal"
+                                      radius="md"
+                                      leftSection={<IconRefresh size={12} />}
+                                      onClick={() => handleRetryDelivery(wh.id, d.id)}
+                                    >
+                                      Retry
+                                    </Button>
+                                  )}
+                                </Table.Td>
+                              </Table.Tr>
+                            );
+                          })}
+                          {deliveries.length === 0 && (
+                            <Table.Tr>
+                              <Table.Td colSpan={5}>
+                                <Text size="xs" ta="center" py="sm" style={{ color: '#5c5f66' }}>
+                                  No deliveries yet
+                                </Text>
+                              </Table.Td>
+                            </Table.Tr>
+                          )}
+                        </Table.Tbody>
+                      </Table>
+                    </Box>
+                  )}
+                </Box>
+              );
+            })}
+          </Stack>
+        ) : (
+          <Text size="sm" style={{ color: '#5c5f66' }}>No webhooks configured</Text>
+        )}
+      </Paper>
+
       <SectionTitle>{t('settings.admin')}</SectionTitle>
       <Paper p="lg" style={cardStyle}>
         <Group align="end" gap="md" wrap="wrap">
-          <PasswordInput label={t('settings.currentPassword')} value={currentPassword} onChange={(e) => setCurrentPassword(e.currentTarget.value)} styles={inputStyles} style={{ flex: 1, minWidth: 200 }} />
-          <PasswordInput label={t('settings.newPassword')} value={newPassword} onChange={(e) => setNewPassword(e.currentTarget.value)} styles={inputStyles} style={{ flex: 1, minWidth: 200 }} />
-          <Button variant="light" color="teal" radius="md" loading={changingPassword} onClick={handleChangePassword} styles={{ root: { border: '1px solid rgba(32,201,151,0.2)', height: 36 } }}>{t('settings.change')}</Button>
+          <PasswordInput label={t('settings.currentPassword')} value={currentPassword} onChange={(e) => setCurrentPassword(e.currentTarget.value)} error={currentPassword && currentPassword.length < 1 ? t('validation.required') : null} styles={inputStyles} style={{ flex: 1, minWidth: 200 }} />
+          <PasswordInput label={t('settings.newPassword')} value={newPassword} onChange={(e) => setNewPassword(e.currentTarget.value)} error={newPassword && newPassword.length < 8 ? t('validation.password') : null} styles={inputStyles} style={{ flex: 1, minWidth: 200 }} />
+          <Button variant="light" color="teal" radius="md" loading={changingPassword} onClick={handleChangePassword} disabled={!currentPassword || newPassword.length < 8 || changingPassword} styles={{ root: { border: '1px solid rgba(32,201,151,0.2)', height: 36 } }}>{t('settings.change')}</Button>
         </Group>
       </Paper>
     </Stack>

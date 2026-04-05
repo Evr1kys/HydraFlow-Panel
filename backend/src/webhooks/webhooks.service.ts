@@ -1,12 +1,15 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { createHmac } from 'crypto';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateWebhookDto } from './dto/create-webhook.dto';
+import { WebhookQueueService } from './webhook-queue.service';
 
 export type WebhookEvent =
   | 'user.created'
   | 'user.deleted'
   | 'user.toggled'
+  | 'user.renewed'
+  | 'user.traffic.reset'
   | 'protocol.blocked'
   | 'protocol.recovered';
 
@@ -14,7 +17,10 @@ export type WebhookEvent =
 export class WebhooksService {
   private readonly logger = new Logger(WebhooksService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly queue: WebhookQueueService,
+  ) {}
 
   async findAll() {
     return this.prisma.webhook.findMany({
@@ -50,40 +56,73 @@ export class WebhooksService {
     const matching = webhooks.filter((w) => w.events.includes(event));
 
     for (const webhook of matching) {
-      this.sendWebhook(webhook.url, webhook.secret, event, payload).catch(
-        (err) => {
-          this.logger.warn(
-            `Failed to fire webhook ${webhook.id} to ${webhook.url}: ${String(err)}`,
-          );
-        },
-      );
+      try {
+        const delivery = await this.prisma.webhookDelivery.create({
+          data: {
+            webhookId: webhook.id,
+            event,
+            payload: payload as Prisma.InputJsonValue,
+            status: 'pending',
+            attempts: 0,
+          },
+        });
+        await this.queue.enqueue({
+          deliveryId: delivery.id,
+          webhookId: webhook.id,
+          url: webhook.url,
+          secret: webhook.secret,
+          event,
+          payload,
+        });
+      } catch (err) {
+        this.logger.warn(
+          `Failed to enqueue webhook ${webhook.id}: ${String(err)}`,
+        );
+      }
     }
   }
 
-  private async sendWebhook(
-    url: string,
-    secret: string,
-    event: string,
-    payload: Record<string, unknown>,
-  ) {
-    const body = JSON.stringify({ event, data: payload, timestamp: new Date().toISOString() });
-    const signature = createHmac('sha256', secret).update(body).digest('hex');
+  // --- Delivery management ---
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Webhook-Signature': signature,
-        'X-Webhook-Event': event,
-      },
-      body,
-      signal: AbortSignal.timeout(10000),
+  async listDeliveries(webhookId: string, limit = 50) {
+    const webhook = await this.prisma.webhook.findUnique({
+      where: { id: webhookId },
     });
-
-    if (!response.ok) {
-      this.logger.warn(
-        `Webhook to ${url} returned status ${response.status}`,
-      );
+    if (!webhook) {
+      throw new NotFoundException('Webhook not found');
     }
+    return this.prisma.webhookDelivery.findMany({
+      where: { webhookId },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+  }
+
+  async retryDelivery(webhookId: string, deliveryId: string) {
+    const delivery = await this.prisma.webhookDelivery.findUnique({
+      where: { id: deliveryId },
+    });
+    if (!delivery || delivery.webhookId !== webhookId) {
+      throw new NotFoundException('Delivery not found');
+    }
+    await this.queue.retry(deliveryId);
+    return { message: 'Retry scheduled' };
+  }
+
+  async deliveryStats() {
+    const grouped = await this.prisma.webhookDelivery.groupBy({
+      by: ['status'],
+      _count: { _all: true },
+    });
+    const stats: Record<string, number> = {
+      pending: 0,
+      success: 0,
+      failed: 0,
+      dead: 0,
+    };
+    for (const row of grouped) {
+      stats[row.status] = row._count._all;
+    }
+    return stats;
   }
 }

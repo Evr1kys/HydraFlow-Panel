@@ -10,10 +10,14 @@ import {
   Stack,
   ActionIcon,
   Box,
-  Loader,
   Paper,
   Badge,
 } from '@mantine/core';
+import { LoadingSkeleton } from '../components/LoadingSkeleton';
+import { EmptyState } from '../components/EmptyState';
+import { IconAlertTriangle } from '@tabler/icons-react';
+import { extractErrorMessage } from '../api/client';
+import { usePermissions } from '../hooks/usePermissions';
 import { notifications } from '@mantine/notifications';
 import {
   IconPlus,
@@ -63,18 +67,22 @@ const thStyle = {
 
 export function ConfigProfilesPage() {
   const { t } = useTranslation();
+  const permissions = usePermissions();
   const [profiles, setProfiles] = useState<ConfigProfile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [newConfig, setNewConfig] = useState('{\n  \n}');
 
   const fetchProfiles = useCallback(async () => {
+    setLoadError(null);
     try {
       const data = await getConfigProfiles();
       setProfiles(data);
-    } catch {
+    } catch (err) {
+      setLoadError(extractErrorMessage(err));
       notifications.show({
         title: t('common.error'),
         message: t('notification.profileCreateError'),
@@ -151,19 +159,28 @@ export function ConfigProfilesPage() {
   };
 
   if (loading) {
+    return <LoadingSkeleton variant="table" rows={4} />;
+  }
+
+  if (loadError) {
     return (
-      <Box
-        style={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          minHeight: 400,
-        }}
-      >
-        <Loader color="teal" />
-      </Box>
+      <EmptyState
+        icon={IconAlertTriangle}
+        title={t('common.error')}
+        message={loadError}
+      />
     );
   }
+
+  const configIsValid = (() => {
+    if (!newConfig.trim()) return true;
+    try {
+      JSON.parse(newConfig);
+      return true;
+    } catch {
+      return false;
+    }
+  })();
 
   return (
     <Stack gap="lg">
@@ -194,15 +211,17 @@ export function ConfigProfilesPage() {
             {profiles.length}
           </Badge>
         </Group>
-        <Button
-          leftSection={<IconPlus size={16} />}
-          variant="gradient"
-          gradient={{ from: 'teal', to: 'cyan' }}
-          radius="md"
-          onClick={() => setCreateOpen(true)}
-        >
-          {t('configProfiles.addProfile')}
-        </Button>
+        {permissions.canEdit && (
+          <Button
+            leftSection={<IconPlus size={16} />}
+            variant="gradient"
+            gradient={{ from: 'teal', to: 'cyan' }}
+            radius="md"
+            onClick={() => setCreateOpen(true)}
+          >
+            {t('configProfiles.addProfile')}
+          </Button>
+        )}
       </Group>
 
       <Paper style={{ ...cardStyle, overflow: 'hidden' }}>
@@ -270,51 +289,60 @@ export function ConfigProfilesPage() {
                   </Table.Td>
                   <Table.Td>
                     <Group gap="xs">
-                      <ActionIcon
-                        variant="subtle"
-                        color={profile.isDefault ? 'yellow' : 'gray'}
-                        radius="md"
-                        onClick={() => handleSetDefault(profile.id)}
-                        style={{ border: '1px solid rgba(252,196,25,0.15)' }}
-                        title={t('configProfiles.setDefault')}
-                      >
-                        {profile.isDefault ? (
-                          <IconStarFilled size={14} />
-                        ) : (
-                          <IconStar size={14} />
-                        )}
-                      </ActionIcon>
-                      <ActionIcon
-                        variant="subtle"
-                        color="red"
-                        radius="md"
-                        onClick={() => handleDelete(profile.id)}
-                        style={{ border: '1px solid rgba(255,107,107,0.15)' }}
-                        title={t('configProfiles.deleteProfile')}
-                      >
-                        <IconTrash size={14} />
-                      </ActionIcon>
+                      {permissions.canEdit && (
+                        <ActionIcon
+                          variant="subtle"
+                          color={profile.isDefault ? 'yellow' : 'gray'}
+                          radius="md"
+                          onClick={() => handleSetDefault(profile.id)}
+                          style={{ border: '1px solid rgba(252,196,25,0.15)' }}
+                          title={t('configProfiles.setDefault')}
+                        >
+                          {profile.isDefault ? (
+                            <IconStarFilled size={14} />
+                          ) : (
+                            <IconStar size={14} />
+                          )}
+                        </ActionIcon>
+                      )}
+                      {permissions.canDelete && (
+                        <ActionIcon
+                          variant="subtle"
+                          color="red"
+                          radius="md"
+                          onClick={() => handleDelete(profile.id)}
+                          style={{ border: '1px solid rgba(255,107,107,0.15)' }}
+                          title={t('configProfiles.deleteProfile')}
+                        >
+                          <IconTrash size={14} />
+                        </ActionIcon>
+                      )}
                     </Group>
                   </Table.Td>
                 </Table.Tr>
               ))}
               {profiles.length === 0 && (
                 <Table.Tr>
-                  <Table.Td colSpan={4}>
-                    <Box
-                      py={48}
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: 8,
-                      }}
-                    >
-                      <IconFileCode size={40} color="#373A40" stroke={1} />
-                      <Text ta="center" size="sm" style={{ color: '#5c5f66' }}>
-                        {t('configProfiles.noProfiles')}
-                      </Text>
-                    </Box>
+                  <Table.Td colSpan={4} style={{ padding: 0 }}>
+                    <EmptyState
+                      icon={IconFileCode}
+                      message={t('configProfiles.noProfiles')}
+                      minHeight={200}
+                      action={
+                        permissions.canEdit ? (
+                          <Button
+                            leftSection={<IconPlus size={14} />}
+                            variant="light"
+                            color="teal"
+                            radius="md"
+                            size="sm"
+                            onClick={() => setCreateOpen(true)}
+                          >
+                            {t('configProfiles.addProfile')}
+                          </Button>
+                        ) : undefined
+                      }
+                    />
                   </Table.Td>
                 </Table.Tr>
               )}
@@ -348,12 +376,14 @@ export function ConfigProfilesPage() {
             placeholder={t('configProfiles.profileNamePlaceholder')}
             value={newName}
             onChange={(e) => setNewName(e.currentTarget.value)}
+            error={newName.trim() === '' ? t('validation.required') : null}
             styles={inputStyles}
           />
           <Textarea
             label={t('configProfiles.jsonConfig')}
             value={newConfig}
             onChange={(e) => setNewConfig(e.currentTarget.value)}
+            error={configIsValid ? null : t('validation.json')}
             minRows={12}
             maxRows={20}
             autosize
@@ -382,6 +412,7 @@ export function ConfigProfilesPage() {
             onClick={handleCreate}
             radius="md"
             fullWidth
+            disabled={!newName.trim() || !configIsValid || creating}
           >
             {t('configProfiles.create')}
           </Button>

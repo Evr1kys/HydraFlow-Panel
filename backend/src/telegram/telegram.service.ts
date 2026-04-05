@@ -1,8 +1,33 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../prisma/prisma.service';
 import { XrayService } from '../xray/xray.service';
 import { NodesService } from '../nodes/nodes.service';
+
+interface UserLike {
+  email?: string | null;
+  id?: string;
+  expiryDate?: Date | string | null;
+}
+
+interface NodeLike {
+  name?: string | null;
+  address?: string | null;
+  id?: string;
+}
+
+interface BackupLike {
+  id?: string;
+  fileSize?: bigint | number | string | null;
+  errorMsg?: string | null;
+}
+
+interface LoginFailedPayload {
+  ip: string;
+  attempts: number;
+  email?: string;
+}
 
 @Injectable()
 export class TelegramService implements OnModuleInit, OnModuleDestroy {
@@ -11,6 +36,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   private readonly botToken: string | undefined;
   private readonly adminId: string | undefined;
   private isRunning = false;
+  private alertsEnabled = true;
 
   constructor(
     private readonly configService: ConfigService,
@@ -70,7 +96,10 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
         '/users - User statistics\n' +
         '/stats - System stats\n' +
         '/node - Node status\n' +
-        '/restart - Restart xray',
+        '/restart - Restart xray\n' +
+        '/alerts on|off - Toggle notifications\n' +
+        '/users_expired - List expired users\n' +
+        '/stats_day - 24h summary',
       );
     });
 
@@ -172,10 +201,76 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
         await ctx.reply('Error restarting xray');
       }
     });
+
+    bot.command('alerts', async (ctx) => {
+      if (!this.isAdminUser(ctx.message?.from?.id)) return;
+      const arg = (ctx.message?.text ?? '').split(/\s+/)[1]?.toLowerCase();
+      if (arg === 'on') {
+        this.alertsEnabled = true;
+        await ctx.reply('Alerts enabled');
+      } else if (arg === 'off') {
+        this.alertsEnabled = false;
+        await ctx.reply('Alerts disabled');
+      } else {
+        await ctx.reply(
+          `Alerts are currently ${this.alertsEnabled ? 'ON' : 'OFF'}. Use /alerts on|off`,
+        );
+      }
+    });
+
+    bot.command('users_expired', async (ctx) => {
+      if (!this.isAdminUser(ctx.message?.from?.id)) return;
+      try {
+        const users = await this.prisma.user.findMany({
+          where: { expiryDate: { lt: new Date() } },
+          select: { email: true, expiryDate: true },
+          orderBy: { expiryDate: 'desc' },
+          take: 25,
+        });
+        if (users.length === 0) {
+          await ctx.reply('No expired users');
+          return;
+        }
+        const lines = users.map(
+          (u) =>
+            `${u.email} - expired ${u.expiryDate ? u.expiryDate.toISOString().slice(0, 10) : 'n/a'}`,
+        );
+        await ctx.reply(`Expired users (max 25):\n${lines.join('\n')}`);
+      } catch (err) {
+        this.logger.error('Error in /users_expired command', err);
+        await ctx.reply('Error listing expired users');
+      }
+    });
+
+    bot.command('stats_day', async (ctx) => {
+      if (!this.isAdminUser(ctx.message?.from?.id)) return;
+      try {
+        const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const newUsers = await this.prisma.user.count({
+          where: { createdAt: { gte: since } },
+        });
+        const alerts = await this.prisma.alert.count({
+          where: { createdAt: { gte: since } },
+        });
+        const totalUsers = await this.prisma.user.count();
+        const activeUsers = await this.prisma.user.count({ where: { enabled: true } });
+        await ctx.reply(
+          `24h summary:\n` +
+          `New users: ${newUsers}\n` +
+          `Alerts: ${alerts}\n` +
+          `Total users: ${totalUsers}\n` +
+          `Active users: ${activeUsers}`,
+        );
+      } catch (err) {
+        this.logger.error('Error in /stats_day command', err);
+        await ctx.reply('Error computing daily stats');
+      }
+    });
   }
 
   async notify(message: string): Promise<void> {
     if (!this.botToken || !this.adminId) return;
+    if (!this.alertsEnabled) return;
 
     try {
       const grammy = await import('grammy');
@@ -186,16 +281,66 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async notifyNewUser(email: string): Promise<void> {
+  async notifyNewUser(user: UserLike | string): Promise<void> {
+    const email = typeof user === 'string' ? user : user.email ?? 'unknown';
     await this.notify(`New user registered: ${email}`);
   }
 
-  async notifyUserExpired(email: string): Promise<void> {
+  async notifyUserExpired(user: UserLike | string): Promise<void> {
+    const email = typeof user === 'string' ? user : user.email ?? 'unknown';
     await this.notify(`User subscription expired: ${email}`);
+  }
+
+  async notifyUserRenewed(user: UserLike | string): Promise<void> {
+    const email = typeof user === 'string' ? user : user.email ?? 'unknown';
+    const exp =
+      typeof user === 'object' && user?.expiryDate
+        ? new Date(user.expiryDate).toISOString().slice(0, 10)
+        : 'n/a';
+    await this.notify(`User renewed: ${email} (until ${exp})`);
   }
 
   async notifyProtocolBlocked(protocol: string, isp: string): Promise<void> {
     await this.notify(`Protocol blocked: ${protocol} on ${isp}`);
+  }
+
+  async notifyNodeDown(node: NodeLike | string): Promise<void> {
+    const label =
+      typeof node === 'string'
+        ? node
+        : `${node.name ?? 'node'} (${node.address ?? ''})`;
+    await this.notify(`Node DOWN: ${label}`);
+  }
+
+  async notifyNodeUp(node: NodeLike | string): Promise<void> {
+    const label =
+      typeof node === 'string'
+        ? node
+        : `${node.name ?? 'node'} (${node.address ?? ''})`;
+    await this.notify(`Node recovered: ${label}`);
+  }
+
+  async notifyLoginFailed(payload: LoginFailedPayload): Promise<void> {
+    if (payload.attempts <= 5) return;
+    await this.notify(
+      `Suspicious login activity: ${payload.attempts} failed attempts from ${payload.ip}` +
+        (payload.email ? ` (${payload.email})` : ''),
+    );
+  }
+
+  async notifyBackupCompleted(backup: BackupLike): Promise<void> {
+    const sizeStr = backup.fileSize
+      ? formatBytesSimple(BigInt(String(backup.fileSize)))
+      : 'unknown size';
+    await this.notify(`Backup completed: ${backup.id ?? ''} (${sizeStr})`);
+  }
+
+  async notifyBackupFailed(backup: BackupLike): Promise<void> {
+    await this.notify(
+      `Backup FAILED: ${backup.id ?? ''}${
+        backup.errorMsg ? ` - ${backup.errorMsg}` : ''
+      }`,
+    );
   }
 
   async notifyXrayRestart(success: boolean): Promise<void> {
@@ -204,6 +349,52 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
         ? 'Xray restarted successfully'
         : 'Xray restart failed!',
     );
+  }
+
+  // Event listeners
+  @OnEvent('user.created')
+  onUserCreated(user: UserLike) {
+    void this.notifyNewUser(user);
+  }
+
+  @OnEvent('user.expired')
+  onUserExpired(user: UserLike) {
+    void this.notifyUserExpired(user);
+  }
+
+  @OnEvent('user.renewed')
+  onUserRenewed(user: UserLike) {
+    void this.notifyUserRenewed(user);
+  }
+
+  @OnEvent('protocol.blocked')
+  onProtocolBlocked(payload: { protocol: string; isp: string }) {
+    void this.notifyProtocolBlocked(payload.protocol, payload.isp);
+  }
+
+  @OnEvent('node.down')
+  onNodeDown(node: NodeLike) {
+    void this.notifyNodeDown(node);
+  }
+
+  @OnEvent('node.up')
+  onNodeUp(node: NodeLike) {
+    void this.notifyNodeUp(node);
+  }
+
+  @OnEvent('auth.failed')
+  onAuthFailed(payload: LoginFailedPayload) {
+    void this.notifyLoginFailed(payload);
+  }
+
+  @OnEvent('backup.completed')
+  onBackupCompleted(backup: BackupLike) {
+    void this.notifyBackupCompleted(backup);
+  }
+
+  @OnEvent('backup.failed')
+  onBackupFailed(backup: BackupLike) {
+    void this.notifyBackupFailed(backup);
   }
 }
 

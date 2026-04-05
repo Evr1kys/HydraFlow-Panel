@@ -10,12 +10,16 @@ import {
   Stack,
   ActionIcon,
   Box,
-  Loader,
   Paper,
   Badge,
   Select,
   SimpleGrid,
 } from '@mantine/core';
+import { LoadingSkeleton } from '../components/LoadingSkeleton';
+import { EmptyState } from '../components/EmptyState';
+import { extractErrorMessage } from '../api/client';
+import { usePermissions } from '../hooks/usePermissions';
+import { useTranslation } from 'react-i18next';
 import { notifications } from '@mantine/notifications';
 import {
   IconReceipt,
@@ -119,12 +123,15 @@ function StatCard({
 }
 
 export function BillingPage() {
+  const { t } = useTranslation();
+  const permissions = usePermissions();
   const [summary, setSummary] = useState<BillingSummary | null>(null);
   const [billingNodes, setBillingNodes] = useState<BillingNode[]>([]);
   const [providers, setProviders] = useState<BillingProvider[]>([]);
   const [history, setHistory] = useState<BillingHistoryEntry[]>([]);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Provider modal
   const [providerOpen, setProviderOpen] = useState(false);
@@ -145,6 +152,7 @@ export function BillingPage() {
   const [payAmount, setPayAmount] = useState<number>(0);
 
   const fetchAll = useCallback(async () => {
+    setLoadError(null);
     try {
       const [s, bn, p, h, n] = await Promise.all([
         getBillingSummary(),
@@ -158,7 +166,8 @@ export function BillingPage() {
       setProviders(p);
       setHistory(h);
       setNodes(n);
-    } catch {
+    } catch (err) {
+      setLoadError(extractErrorMessage(err));
       notifications.show({ title: 'Error', message: 'Failed to load billing data', color: 'red' });
     } finally {
       setLoading(false);
@@ -230,10 +239,26 @@ export function BillingPage() {
   };
 
   if (loading) {
+    return <LoadingSkeleton variant="dashboard" />;
+  }
+
+  if (loadError) {
     return (
-      <Box style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
-        <Loader color="teal" />
-      </Box>
+      <EmptyState
+        icon={IconAlertTriangle}
+        title={t('common.error')}
+        message={loadError}
+      />
+    );
+  }
+
+  if (!permissions.canViewBilling) {
+    return (
+      <EmptyState
+        icon={IconAlertTriangle}
+        title={t('access.denied')}
+        message={t('access.insufficientPermissions')}
+      />
     );
   }
 
@@ -259,26 +284,28 @@ export function BillingPage() {
             Billing
           </Text>
         </Group>
-        <Group gap="xs">
-          <Button
-            leftSection={<IconPlus size={16} />}
-            variant="light"
-            color="gray"
-            radius="md"
-            onClick={() => setProviderOpen(true)}
-          >
-            Add Provider
-          </Button>
-          <Button
-            leftSection={<IconPlus size={16} />}
-            variant="gradient"
-            gradient={{ from: 'teal', to: 'cyan' }}
-            radius="md"
-            onClick={() => setBnOpen(true)}
-          >
-            Add Billing Node
-          </Button>
-        </Group>
+        {permissions.canEdit && (
+          <Group gap="xs">
+            <Button
+              leftSection={<IconPlus size={16} />}
+              variant="light"
+              color="gray"
+              radius="md"
+              onClick={() => setProviderOpen(true)}
+            >
+              Add Provider
+            </Button>
+            <Button
+              leftSection={<IconPlus size={16} />}
+              variant="gradient"
+              gradient={{ from: 'teal', to: 'cyan' }}
+              radius="md"
+              onClick={() => setBnOpen(true)}
+            >
+              Add Billing Node
+            </Button>
+          </Group>
+        )}
       </Group>
 
       {/* Summary Cards */}
@@ -423,13 +450,12 @@ export function BillingPage() {
               ))}
               {billingNodes.length === 0 && (
                 <Table.Tr>
-                  <Table.Td colSpan={5}>
-                    <Box py={48} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-                      <IconReceipt size={40} color="#373A40" stroke={1} />
-                      <Text ta="center" size="sm" style={{ color: '#5c5f66' }}>
-                        No billing nodes configured
-                      </Text>
-                    </Box>
+                  <Table.Td colSpan={5} style={{ padding: 0 }}>
+                    <EmptyState
+                      icon={IconReceipt}
+                      message="No billing nodes configured"
+                      minHeight={160}
+                    />
                   </Table.Td>
                 </Table.Tr>
               )}
@@ -601,6 +627,7 @@ export function BillingPage() {
             placeholder="Hetzner"
             value={provName}
             onChange={(e) => setProvName(e.currentTarget.value)}
+            error={provName.trim() === '' ? t('validation.required') : null}
             styles={inputStyles}
           />
           <TextInput
@@ -608,6 +635,12 @@ export function BillingPage() {
             placeholder="https://api.hetzner.cloud (optional)"
             value={provUrl}
             onChange={(e) => setProvUrl(e.currentTarget.value)}
+            error={
+              provUrl.trim() &&
+              !/^https?:\/\/[^\s/$.?#].[^\s]*$/i.test(provUrl.trim())
+                ? t('validation.url')
+                : null
+            }
             styles={inputStyles}
           />
           <Button
@@ -616,6 +649,7 @@ export function BillingPage() {
             onClick={handleCreateProvider}
             radius="md"
             fullWidth
+            disabled={!provName.trim()}
           >
             Add Provider
           </Button>
@@ -662,6 +696,8 @@ export function BillingPage() {
             label="Monthly Rate ($)"
             value={bnRate}
             onChange={(v) => setBnRate(Number(v))}
+            error={bnRate < 0 ? t('validation.positive') : null}
+            min={0}
             decimalScale={2}
             styles={inputStyles}
           />
@@ -669,6 +705,7 @@ export function BillingPage() {
             label="Currency"
             value={bnCurrency}
             onChange={(e) => setBnCurrency(e.currentTarget.value)}
+            error={bnCurrency.trim() === '' ? t('validation.required') : null}
             styles={inputStyles}
           />
           <TextInput
@@ -684,6 +721,7 @@ export function BillingPage() {
             onClick={handleCreateBillingNode}
             radius="md"
             fullWidth
+            disabled={!bnNodeId || !bnProviderId || bnRate < 0 || !bnCurrency.trim()}
           >
             Add Billing Node
           </Button>
@@ -708,6 +746,8 @@ export function BillingPage() {
             label="Amount ($)"
             value={payAmount}
             onChange={(v) => setPayAmount(Number(v))}
+            error={payAmount < 0 ? t('validation.positive') : null}
+            min={0}
             decimalScale={2}
             styles={inputStyles}
           />
@@ -717,6 +757,7 @@ export function BillingPage() {
             onClick={handleCreatePayment}
             radius="md"
             fullWidth
+            disabled={payAmount < 0}
           >
             Record Payment
           </Button>

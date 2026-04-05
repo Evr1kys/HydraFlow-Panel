@@ -14,6 +14,7 @@ import {
   ApiOperation,
   ApiResponse,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { SessionsService } from './sessions.service';
 import { LoginDto } from './dto/login.dto';
@@ -36,6 +37,7 @@ export class AuthController {
     private readonly sessionsService: SessionsService,
   ) {}
 
+  @Throttle({ auth: { limit: 5, ttl: 60000 } })
   @Post('login')
   @ApiOperation({ summary: 'Login with email and password' })
   @ApiResponse({ status: 201, description: 'JWT token returned' })

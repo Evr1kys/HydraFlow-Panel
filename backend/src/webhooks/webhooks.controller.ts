@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -43,5 +44,30 @@ export class WebhooksController {
   @ApiResponse({ status: 200, description: 'Webhook deleted' })
   remove(@Param('id') id: string) {
     return this.webhooksService.remove(id);
+  }
+
+  @Get('deliveries/stats')
+  @ApiOperation({ summary: 'Get webhook delivery counts by status' })
+  deliveryStats() {
+    return this.webhooksService.deliveryStats();
+  }
+
+  @Get(':id/deliveries')
+  @ApiOperation({ summary: 'Get recent deliveries for a webhook' })
+  listDeliveries(
+    @Param('id') id: string,
+    @Query('limit') limit?: string,
+  ) {
+    const parsed = limit ? Number(limit) : 50;
+    return this.webhooksService.listDeliveries(id, parsed);
+  }
+
+  @Post(':id/deliveries/:deliveryId/retry')
+  @ApiOperation({ summary: 'Manually retry a failed delivery' })
+  retryDelivery(
+    @Param('id') id: string,
+    @Param('deliveryId') deliveryId: string,
+  ) {
+    return this.webhooksService.retryDelivery(id, deliveryId);
   }
 }

@@ -8,13 +8,18 @@ import {
   Stack,
   ActionIcon,
   Box,
-  Loader,
   Paper,
   Badge,
   Select,
   Switch,
   Textarea,
 } from '@mantine/core';
+import { LoadingSkeleton } from '../components/LoadingSkeleton';
+import { EmptyState } from '../components/EmptyState';
+import { IconAlertTriangle } from '@tabler/icons-react';
+import { extractErrorMessage } from '../api/client';
+import { usePermissions } from '../hooks/usePermissions';
+import { useTranslation } from 'react-i18next';
 import { notifications } from '@mantine/notifications';
 import {
   IconPuzzle,
@@ -89,9 +94,12 @@ function pluginTypeColor(type: string): string {
 }
 
 export function PluginsPage() {
+  const { t } = useTranslation();
+  const permissions = usePermissions();
   const [plugins, setPlugins] = useState<NodePlugin[]>([]);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [executingId, setExecutingId] = useState<string | null>(null);
 
   // Create modal
@@ -102,11 +110,13 @@ export function PluginsPage() {
   const [creating, setCreating] = useState(false);
 
   const fetchAll = useCallback(async () => {
+    setLoadError(null);
     try {
       const [p, n] = await Promise.all([getAllPlugins(), getNodes()]);
       setPlugins(p);
       setNodes(n);
-    } catch {
+    } catch (err) {
+      setLoadError(extractErrorMessage(err));
       notifications.show({ title: 'Error', message: 'Failed to load plugins', color: 'red' });
     } finally {
       setLoading(false);
@@ -178,12 +188,29 @@ export function PluginsPage() {
   };
 
   if (loading) {
+    return <LoadingSkeleton variant="table" rows={4} />;
+  }
+
+  if (loadError) {
     return (
-      <Box style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
-        <Loader color="teal" />
-      </Box>
+      <EmptyState
+        icon={IconAlertTriangle}
+        title={t('common.error')}
+        message={loadError}
+      />
     );
   }
+
+  // Validate JSON for create form
+  const configIsValid = (() => {
+    if (!newConfig.trim()) return true;
+    try {
+      JSON.parse(newConfig);
+      return true;
+    } catch {
+      return false;
+    }
+  })();
 
   return (
     <Stack gap="lg">
@@ -215,15 +242,17 @@ export function PluginsPage() {
             {plugins.length}
           </Badge>
         </Group>
-        <Button
-          leftSection={<IconPlus size={16} />}
-          variant="gradient"
-          gradient={{ from: 'teal', to: 'cyan' }}
-          radius="md"
-          onClick={() => setCreateOpen(true)}
-        >
-          Add Plugin
-        </Button>
+        {permissions.canEdit && (
+          <Button
+            leftSection={<IconPlus size={16} />}
+            variant="gradient"
+            gradient={{ from: 'teal', to: 'cyan' }}
+            radius="md"
+            onClick={() => setCreateOpen(true)}
+          >
+            Add Plugin
+          </Button>
+        )}
       </Group>
 
       {/* Table */}
@@ -283,28 +312,43 @@ export function PluginsPage() {
                       >
                         <IconPlayerPlay size={14} />
                       </ActionIcon>
-                      <ActionIcon
-                        variant="subtle"
-                        color="red"
-                        radius="md"
-                        onClick={() => handleDelete(plugin.id)}
-                        style={{ border: '1px solid rgba(255,107,107,0.15)' }}
-                      >
-                        <IconTrash size={14} />
-                      </ActionIcon>
+                      {permissions.canDelete && (
+                        <ActionIcon
+                          variant="subtle"
+                          color="red"
+                          radius="md"
+                          onClick={() => handleDelete(plugin.id)}
+                          style={{ border: '1px solid rgba(255,107,107,0.15)' }}
+                        >
+                          <IconTrash size={14} />
+                        </ActionIcon>
+                      )}
                     </Group>
                   </Table.Td>
                 </Table.Tr>
               ))}
               {plugins.length === 0 && (
                 <Table.Tr>
-                  <Table.Td colSpan={5}>
-                    <Box py={48} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-                      <IconPuzzle size={40} color="#373A40" stroke={1} />
-                      <Text ta="center" size="sm" style={{ color: '#5c5f66' }}>
-                        No plugins configured
-                      </Text>
-                    </Box>
+                  <Table.Td colSpan={5} style={{ padding: 0 }}>
+                    <EmptyState
+                      icon={IconPuzzle}
+                      message={t('plugins.noPlugins')}
+                      minHeight={200}
+                      action={
+                        permissions.canEdit ? (
+                          <Button
+                            leftSection={<IconPlus size={14} />}
+                            variant="light"
+                            color="teal"
+                            radius="md"
+                            size="sm"
+                            onClick={() => setCreateOpen(true)}
+                          >
+                            {t('plugins.add')}
+                          </Button>
+                        ) : undefined
+                      }
+                    />
                   </Table.Td>
                 </Table.Tr>
               )}
@@ -354,6 +398,7 @@ export function PluginsPage() {
             placeholder="{}"
             value={newConfig}
             onChange={(e) => setNewConfig(e.currentTarget.value)}
+            error={configIsValid ? null : t('validation.json')}
             minRows={3}
             styles={inputStyles}
           />
@@ -364,6 +409,7 @@ export function PluginsPage() {
             onClick={handleCreate}
             radius="md"
             fullWidth
+            disabled={!newNodeId || !newType || !configIsValid || creating}
           >
             Add Plugin
           </Button>

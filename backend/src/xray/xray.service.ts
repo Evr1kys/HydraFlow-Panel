@@ -3,6 +3,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { readFile } from 'fs/promises';
 import { PrismaService } from '../prisma/prisma.service';
+import { MetricsService } from '../metrics/metrics.service';
 
 const execAsync = promisify(exec);
 
@@ -46,7 +47,10 @@ export interface ConfigValidationResult {
 export class XrayService {
   private readonly logger = new Logger(XrayService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly metrics: MetricsService,
+  ) {}
 
   async getStatus(): Promise<XrayStatus> {
     try {
@@ -92,6 +96,7 @@ export class XrayService {
   }
 
   async generateConfig(): Promise<XrayConfig> {
+    const startTime = process.hrtime.bigint();
     const settings = await this.prisma.settings.findUnique({
       where: { id: 'main' },
     });
@@ -185,6 +190,9 @@ export class XrayService {
     } catch {
       this.logger.warn('Could not write xray config (not running as root or xray not installed)');
     }
+
+    const durationSeconds = Number(process.hrtime.bigint() - startTime) / 1e9;
+    this.metrics.observeConfigGen(durationSeconds);
 
     return config;
   }

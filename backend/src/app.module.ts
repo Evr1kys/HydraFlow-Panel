@@ -1,5 +1,8 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
+import { EventEmitterModule } from '@nestjs/event-emitter';
+import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
@@ -21,10 +24,25 @@ import { ConfigProfilesModule } from './config-profiles/config-profiles.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { MigrationModule } from './migration/migration.module';
 import { SquadsModule } from './squads/squads.module';
+import { RedisModule } from './common/redis.module';
+import { UserBillingModule } from './user-billing/user-billing.module';
+import { ThrottlerConfig } from './common/throttler.config';
+import { ThrottlerBehindAuthGuard } from './common/throttler-behind-auth.guard';
+import { AuditLogModule } from './audit-log/audit-log.module';
+import { AuditLogInterceptor } from './audit-log/audit-log.interceptor';
+import { AdminsModule } from './admins/admins.module';
+import { ApiKeysModule } from './api-keys/api-keys.module';
+import { EmailModule } from './email/email.module';
+import { BackupModule } from './backup/backup.module';
+import { BotModule } from './bot/bot.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    EventEmitterModule.forRoot(),
+    ScheduleModule.forRoot(),
+    ThrottlerConfig,
+    RedisModule,
     PrismaModule,
     AuthModule,
     UsersModule,
@@ -46,6 +64,17 @@ import { SquadsModule } from './squads/squads.module';
     MetricsModule,
     MigrationModule,
     SquadsModule,
+    UserBillingModule,
+    AuditLogModule,
+    AdminsModule,
+    ApiKeysModule,
+    EmailModule,
+    BackupModule,
+    BotModule,
+  ],
+  providers: [
+    { provide: APP_GUARD, useClass: ThrottlerBehindAuthGuard },
+    { provide: APP_INTERCEPTOR, useClass: AuditLogInterceptor },
   ],
 })
 export class AppModule {}

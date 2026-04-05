@@ -12,9 +12,11 @@ import {
   Select,
   TextInput,
   Box,
-  Loader,
   Timeline,
 } from '@mantine/core';
+import { LoadingSkeleton } from '../components/LoadingSkeleton';
+import { EmptyState } from '../components/EmptyState';
+import { extractErrorMessage } from '../api/client';
 import { notifications } from '@mantine/notifications';
 import {
   IconRadar,
@@ -123,6 +125,7 @@ export function IntelligencePage() {
   const [data, setData] = useState<IntelligenceEntry[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
   const [reportISP, setReportISP] = useState('');
   const [reportProtocol, setReportProtocol] = useState<string | null>(null);
@@ -130,6 +133,7 @@ export function IntelligencePage() {
   const [submitting, setSubmitting] = useState(false);
 
   const fetchData = useCallback(async () => {
+    setLoadError(null);
     try {
       const [intel, alertsData] = await Promise.all([
         getIntelligence(country),
@@ -137,7 +141,8 @@ export function IntelligencePage() {
       ]);
       setData(intel);
       setAlerts(alertsData);
-    } catch {
+    } catch (err) {
+      setLoadError(extractErrorMessage(err));
       notifications.show({
         title: t('common.error'),
         message: t('notification.intelligenceError'),
@@ -185,17 +190,16 @@ export function IntelligencePage() {
   };
 
   if (loading) {
+    return <LoadingSkeleton variant="table" rows={4} />;
+  }
+
+  if (loadError) {
     return (
-      <Box
-        style={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          minHeight: 400,
-        }}
-      >
-        <Loader color="teal" />
-      </Box>
+      <EmptyState
+        icon={IconAlertTriangle}
+        title={t('common.error')}
+        message={loadError}
+      />
     );
   }
 
@@ -406,6 +410,9 @@ export function IntelligencePage() {
             onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
               setReportISP(e.currentTarget.value)
             }
+            error={
+              reportISP.trim() === '' ? t('validation.required') : null
+            }
             styles={inputStyles}
           />
           <Select
@@ -445,6 +452,12 @@ export function IntelligencePage() {
             onClick={handleSubmitReport}
             radius="md"
             fullWidth
+            disabled={
+              !reportISP.trim() ||
+              !reportProtocol ||
+              !reportStatus ||
+              submitting
+            }
           >
             {t('intelligence.submit')}
           </Button>

@@ -8,10 +8,13 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { Response } from 'express';
 import { OAuthService } from './oauth.service';
 import { JwtAuthGuard } from '../jwt-auth.guard';
 import { PrismaService } from '../../prisma/prisma.service';
+import { TelegramCallbackDto } from './dto/telegram-callback.dto';
+import { UnlinkAccountDto } from './dto/unlink-account.dto';
 
 interface RequestWithUser {
   user: { id: string; email: string };
@@ -20,6 +23,7 @@ interface RequestWithUser {
   socket?: { remoteAddress?: string };
 }
 
+@Throttle({ auth: { limit: 5, ttl: 60000 } })
 @Controller('api/auth/oauth')
 export class OAuthController {
   constructor(
@@ -37,16 +41,7 @@ export class OAuthController {
 
   @Post('telegram/callback')
   telegramCallback(
-    @Body()
-    data: {
-      id: number;
-      first_name?: string;
-      last_name?: string;
-      username?: string;
-      photo_url?: string;
-      auth_date: number;
-      hash: string;
-    },
+    @Body() data: TelegramCallbackDto,
     @Request() req: RequestWithUser,
   ) {
     const userAgent = req.headers['user-agent'] ?? 'unknown';
@@ -119,7 +114,7 @@ export class OAuthController {
   @Post('unlink')
   async unlinkAccount(
     @Request() req: RequestWithUser,
-    @Body() body: { accountId: string },
+    @Body() body: UnlinkAccountDto,
   ) {
     await this.prisma.oAuthAccount.deleteMany({
       where: { id: body.accountId, adminId: req.user.id },
