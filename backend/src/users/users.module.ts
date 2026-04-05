@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
+import { TrafficResetService } from './traffic-reset.service';
 import { AuthModule } from '../auth/auth.module';
 import { XrayModule } from '../xray/xray.module';
 import { NodesModule } from '../nodes/nodes.module';
@@ -8,7 +9,7 @@ import { NodesModule } from '../nodes/nodes.module';
 @Module({
   imports: [AuthModule, XrayModule, NodesModule],
   controllers: [UsersController],
-  providers: [UsersService],
+  providers: [UsersService, TrafficResetService],
   exports: [UsersService],
 })
 export class UsersModule {}

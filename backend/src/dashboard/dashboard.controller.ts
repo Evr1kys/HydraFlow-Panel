@@ -21,4 +21,11 @@ export class DashboardController {
   getStats() {
     return this.dashboardService.getStats();
   }
+
+  @Get('recap')
+  @ApiOperation({ summary: 'Get aggregated system-wide recap stats' })
+  @ApiResponse({ status: 200, description: 'Users, traffic, nodes, countries, uptime' })
+  getRecap() {
+    return this.dashboardService.getRecap();
+  }
 }

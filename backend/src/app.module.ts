@@ -35,6 +35,8 @@ import { ApiKeysModule } from './api-keys/api-keys.module';
 import { EmailModule } from './email/email.module';
 import { BackupModule } from './backup/backup.module';
 import { BotModule } from './bot/bot.module';
+import { MetadataModule } from './metadata/metadata.module';
+import { SubscriptionHistoryModule } from './subscription-history/subscription-history.module';
 
 @Module({
   imports: [
@@ -71,6 +73,8 @@ import { BotModule } from './bot/bot.module';
     EmailModule,
     BackupModule,
     BotModule,
+    MetadataModule,
+    SubscriptionHistoryModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerBehindAuthGuard },

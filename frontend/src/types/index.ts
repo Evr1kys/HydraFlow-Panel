@@ -1,16 +1,41 @@
+export type TrafficStrategy =
+  | 'NO_RESET'
+  | 'DAY'
+  | 'WEEK'
+  | 'MONTH'
+  | 'MONTH_ROLLING';
+
 export interface User {
   id: string;
   email: string;
   uuid: string;
   subToken: string;
+  shortUuid: string | null;
+  tag: string | null;
+  tId: string;
   enabled: boolean;
   trafficUp: string;
   trafficDown: string;
   trafficLimit: string | null;
+  lifetimeTrafficUsed: string;
+  trafficStrategy: TrafficStrategy;
+  lastTrafficResetAt: string | null;
   expiryDate: string | null;
+  maxDevices: number;
+  hwidDeviceLimit: number | null;
+  onlineAt: string | null;
   remark: string | null;
+  telegramId: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface UserDevice {
+  id: string;
+  hwid: string;
+  platform: string | null;
+  lastSeen: string;
+  createdAt: string;
 }
 
 export interface Settings {
@@ -41,6 +66,30 @@ export interface ProtocolHealth {
   port: number;
   reachable: boolean;
   latency: number | null;
+}
+
+export interface DashboardRecap {
+  users: {
+    total: number;
+    active: number;
+    expired: number;
+    disabled: number;
+  };
+  traffic: {
+    totalUp: string;
+    totalDown: string;
+    total: string;
+  };
+  nodes: {
+    total: number;
+    enabled: number;
+    healthy: number;
+  };
+  countries: number;
+  activeSessions: number;
+  version: string;
+  startedAt: string;
+  uptimeSeconds: number;
 }
 
 export interface DashboardStats {

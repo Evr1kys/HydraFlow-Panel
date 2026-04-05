@@ -1,5 +1,5 @@
 import { client } from './client';
-import type { User } from '../types';
+import type { User, UserDevice, TrafficStrategy } from '../types';
 
 export async function getUsers(): Promise<User[]> {
   const response = await client.get<User[]>('/users');
@@ -11,6 +11,10 @@ export async function createUser(data: {
   remark?: string;
   trafficLimit?: number;
   expiryDate?: string;
+  tag?: string;
+  trafficStrategy?: TrafficStrategy;
+  hwidDeviceLimit?: number;
+  shortUuid?: string;
 }): Promise<User> {
   const response = await client.post<User>('/users', data);
   return response.data;
@@ -18,7 +22,17 @@ export async function createUser(data: {
 
 export async function updateUser(
   id: string,
-  data: Partial<User>,
+  data: Partial<{
+    email: string;
+    enabled: boolean;
+    remark: string | null;
+    trafficLimit: number | null;
+    expiryDate: string | null;
+    tag: string | null;
+    trafficStrategy: TrafficStrategy;
+    hwidDeviceLimit: number | null;
+    shortUuid: string;
+  }>,
 ): Promise<User> {
   const response = await client.patch<User>(`/users/${id}`, data);
   return response.data;
@@ -55,5 +69,42 @@ export async function renewUser(id: string, days: number): Promise<User> {
 
 export async function resetUserTraffic(id: string): Promise<User> {
   const response = await client.post<User>(`/users/${id}/reset-traffic`);
+  return response.data;
+}
+
+export async function getUserTags(): Promise<string[]> {
+  const response = await client.get<string[]>('/users/tags');
+  return response.data;
+}
+
+export async function getUserByShortUuid(shortUuid: string): Promise<User> {
+  const response = await client.get<User>(`/users/by-short-uuid/${shortUuid}`);
+  return response.data;
+}
+
+export async function getUsersByTag(tag: string): Promise<User[]> {
+  const response = await client.get<User[]>(`/users/by-tag/${encodeURIComponent(tag)}`);
+  return response.data;
+}
+
+export async function getUserByTelegramId(tgId: string): Promise<User> {
+  const response = await client.get<User>(`/users/by-telegram-id/${tgId}`);
+  return response.data;
+}
+
+export async function getUserDevices(id: string): Promise<UserDevice[]> {
+  const response = await client.get<UserDevice[]>(`/users/${id}/devices`);
+  return response.data;
+}
+
+export async function removeUserDevice(
+  id: string,
+  deviceId: string,
+): Promise<void> {
+  await client.delete(`/users/${id}/devices/${deviceId}`);
+}
+
+export async function revokeUserSubscription(id: string): Promise<User> {
+  const response = await client.post<User>(`/users/${id}/revoke-subscription`);
   return response.data;
 }

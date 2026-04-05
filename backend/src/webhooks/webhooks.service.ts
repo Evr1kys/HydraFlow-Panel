@@ -6,6 +6,7 @@ import { WebhookQueueService } from './webhook-queue.service';
 
 export type WebhookEvent =
   | 'user.created'
+  | 'user.updated'
   | 'user.deleted'
   | 'user.toggled'
   | 'user.renewed'

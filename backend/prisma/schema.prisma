@@ -48,28 +48,55 @@ model OAuthAccount {
 }
 
 model User {
-  id              String          @id @default(uuid())
-  email           String          @unique
-  uuid            String          @unique @default(uuid())
-  subToken        String          @unique @default(uuid())
-  enabled         Boolean         @default(true)
-  trafficUp       BigInt          @default(0)
-  trafficDown     BigInt          @default(0)
-  trafficLimit    BigInt?
-  expiryDate      DateTime?
-  maxDevices      Int             @default(3)
-  remark          String?
-  telegramId      BigInt?
-  botUserId       String?         @unique
-  internalSquadId String?
-  internalSquad   InternalSquad?  @relation(fields: [internalSquadId], references: [id], onDelete: SetNull)
-  externalSquadId String?
-  externalSquad   ExternalSquad?  @relation(fields: [externalSquadId], references: [id], onDelete: SetNull)
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-  activeSessions  ActiveSession[]
-  trafficHistory  UserTraffic[]
-  devices         HwidDevice[]
+  id                  String          @id @default(uuid())
+  email               String          @unique
+  uuid                String          @unique @default(uuid())
+  subToken            String          @unique @default(uuid())
+  shortUuid           String?         @unique
+  tag                 String?
+  tId                 BigInt          @default(autoincrement())
+  enabled             Boolean         @default(true)
+  trafficUp           BigInt          @default(0)
+  trafficDown         BigInt          @default(0)
+  trafficLimit        BigInt?
+  lifetimeTrafficUsed BigInt          @default(0)
+  trafficStrategy     String          @default("NO_RESET")
+  lastTrafficResetAt  DateTime?
+  expiryDate          DateTime?
+  maxDevices          Int             @default(3)
+  hwidDeviceLimit     Int?
+  onlineAt            DateTime?
+  remark              String?
+  telegramId          BigInt?
+  botUserId           String?         @unique
+  internalSquadId     String?
+  internalSquad       InternalSquad?  @relation(fields: [internalSquadId], references: [id], onDelete: SetNull)
+  externalSquadId     String?
+  externalSquad       ExternalSquad?  @relation(fields: [externalSquadId], references: [id], onDelete: SetNull)
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  activeSessions      ActiveSession[]
+  trafficHistory      UserTraffic[]
+  devices             HwidDevice[]
+  metadata            UserMeta[]
+  subRequests         SubscriptionRequest[]
+
+  @@index([tId])
+  @@index([tag])
+}
+
+model SubscriptionRequest {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ip           String
+  userAgent    String?
+  platform     String?  // ios | android | windows | macos | linux | unknown
+  format       String?  // v2ray | clash | singbox | outline
+  status       Int      // HTTP status code
+  responseSize Int?
+  createdAt    DateTime @default(now())
+  @@index([userId, createdAt])
 }
 
 model Settings {
@@ -131,6 +158,7 @@ model Node {
   billingNodes   BillingNode[]
   plugins        NodePlugin[]
   activeSessions ActiveSession[]
+  metadata       NodeMeta[]
 }
 
 model Webhook {
@@ -472,4 +500,28 @@ model SupportMessage {
 model BotSetting {
   key   String @id
   value String
+}
+
+model UserMeta {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  key       String
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([userId, key])
+  @@index([userId])
+}
+
+model NodeMeta {
+  id        String   @id @default(uuid())
+  nodeId    String
+  node      Node     @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  key       String
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([nodeId, key])
+  @@index([nodeId])
 }

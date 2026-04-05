@@ -29,12 +29,17 @@ interface LoginFailedPayload {
   email?: string;
 }
 
+type InlineButton = { text: string; url: string };
+type InlineKeyboard = InlineButton[][];
+
 @Injectable()
 export class TelegramService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TelegramService.name);
   private bot: { stop: () => void } | null = null;
   private readonly botToken: string | undefined;
   private readonly adminId: string | undefined;
+  private readonly adminIds: number[];
+  private readonly publicBaseUrl: string;
   private isRunning = false;
   private alertsEnabled = true;
 
@@ -46,6 +51,37 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   ) {
     this.botToken = this.configService.get<string>('TELEGRAM_BOT_TOKEN');
     this.adminId = this.configService.get<string>('TELEGRAM_ADMIN_ID');
+    this.publicBaseUrl =
+      this.configService.get<string>('PUBLIC_BASE_URL') ??
+      'https://panel.hydraflow.xyz';
+    this.adminIds = (this.adminId ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+      .map((s) => Number(s))
+      .filter((n) => Number.isFinite(n));
+  }
+
+  private panelUrl(path: string): string {
+    const base = this.publicBaseUrl.replace(/\/+$/, '');
+    const p = path.startsWith('/') ? path : `/${path}`;
+    return `${base}${p}`;
+  }
+
+  private userButton(userId?: string): InlineButton {
+    return userId
+      ? { text: 'View User', url: this.panelUrl(`/users?id=${encodeURIComponent(userId)}`) }
+      : { text: 'View All Users', url: this.panelUrl('/users') };
+  }
+
+  private nodeButton(nodeId?: string): InlineButton {
+    return nodeId
+      ? { text: 'View Node', url: this.panelUrl(`/nodes?id=${encodeURIComponent(nodeId)}`) }
+      : { text: 'View Nodes', url: this.panelUrl('/nodes') };
+  }
+
+  private allUsersButton(): InlineButton {
+    return { text: 'View All Users', url: this.panelUrl('/users') };
   }
 
   async onModuleInit() {
@@ -80,7 +116,11 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   }
 
   private isAdminUser(fromId: number | undefined): boolean {
-    if (!this.adminId || fromId === undefined) return false;
+    if (fromId === undefined) return false;
+    if (this.adminIds.length > 0) {
+      return this.adminIds.includes(fromId);
+    }
+    if (!this.adminId) return false;
     return String(fromId) === this.adminId;
   }
 
@@ -268,14 +308,38 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  async notify(message: string): Promise<void> {
-    if (!this.botToken || !this.adminId) return;
+  async notify(message: string, keyboard?: InlineKeyboard): Promise<void> {
+    if (!this.botToken) return;
     if (!this.alertsEnabled) return;
+
+    const recipients =
+      this.adminIds.length > 0
+        ? this.adminIds
+        : this.adminId
+          ? [Number(this.adminId)]
+          : [];
+    if (recipients.length === 0) return;
 
     try {
       const grammy = await import('grammy');
       const api = new grammy.Api(this.botToken);
-      await api.sendMessage(Number(this.adminId), message);
+      const options: {
+        parse_mode: 'HTML';
+        reply_markup?: { inline_keyboard: InlineKeyboard };
+      } = { parse_mode: 'HTML' };
+      if (keyboard && keyboard.length > 0) {
+        options.reply_markup = { inline_keyboard: keyboard };
+      }
+      for (const chatId of recipients) {
+        try {
+          await api.sendMessage(chatId, message, options);
+        } catch (err) {
+          this.logger.error(
+            `Failed to send Telegram notification to ${chatId}`,
+            err,
+          );
+        }
+      }
     } catch (err) {
       this.logger.error('Failed to send Telegram notification', err);
     }
@@ -283,25 +347,38 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
 
   async notifyNewUser(user: UserLike | string): Promise<void> {
     const email = typeof user === 'string' ? user : user.email ?? 'unknown';
-    await this.notify(`New user registered: ${email}`);
+    const userId = typeof user === 'object' ? user.id : undefined;
+    await this.notify(`New user registered: <b>${escapeHtml(email)}</b>`, [
+      [this.userButton(userId), this.allUsersButton()],
+    ]);
   }
 
   async notifyUserExpired(user: UserLike | string): Promise<void> {
     const email = typeof user === 'string' ? user : user.email ?? 'unknown';
-    await this.notify(`User subscription expired: ${email}`);
+    const userId = typeof user === 'object' ? user.id : undefined;
+    await this.notify(
+      `User subscription expired: <b>${escapeHtml(email)}</b>`,
+      [[this.userButton(userId), this.allUsersButton()]],
+    );
   }
 
   async notifyUserRenewed(user: UserLike | string): Promise<void> {
     const email = typeof user === 'string' ? user : user.email ?? 'unknown';
+    const userId = typeof user === 'object' ? user.id : undefined;
     const exp =
       typeof user === 'object' && user?.expiryDate
         ? new Date(user.expiryDate).toISOString().slice(0, 10)
         : 'n/a';
-    await this.notify(`User renewed: ${email} (until ${exp})`);
+    await this.notify(
+      `User renewed: <b>${escapeHtml(email)}</b> (until ${exp})`,
+      [[this.userButton(userId), this.allUsersButton()]],
+    );
   }
 
   async notifyProtocolBlocked(protocol: string, isp: string): Promise<void> {
-    await this.notify(`Protocol blocked: ${protocol} on ${isp}`);
+    await this.notify(
+      `Protocol blocked: <b>${escapeHtml(protocol)}</b> on ${escapeHtml(isp)}`,
+    );
   }
 
   async notifyNodeDown(node: NodeLike | string): Promise<void> {
@@ -309,7 +386,10 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       typeof node === 'string'
         ? node
         : `${node.name ?? 'node'} (${node.address ?? ''})`;
-    await this.notify(`Node DOWN: ${label}`);
+    const nodeId = typeof node === 'object' ? node.id : undefined;
+    await this.notify(`Node DOWN: <b>${escapeHtml(label)}</b>`, [
+      [this.nodeButton(nodeId)],
+    ]);
   }
 
   async notifyNodeUp(node: NodeLike | string): Promise<void> {
@@ -317,14 +397,17 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       typeof node === 'string'
         ? node
         : `${node.name ?? 'node'} (${node.address ?? ''})`;
-    await this.notify(`Node recovered: ${label}`);
+    const nodeId = typeof node === 'object' ? node.id : undefined;
+    await this.notify(`Node recovered: <b>${escapeHtml(label)}</b>`, [
+      [this.nodeButton(nodeId)],
+    ]);
   }
 
   async notifyLoginFailed(payload: LoginFailedPayload): Promise<void> {
     if (payload.attempts <= 5) return;
     await this.notify(
-      `Suspicious login activity: ${payload.attempts} failed attempts from ${payload.ip}` +
-        (payload.email ? ` (${payload.email})` : ''),
+      `Suspicious login activity: ${payload.attempts} failed attempts from <b>${escapeHtml(payload.ip)}</b>` +
+        (payload.email ? ` (${escapeHtml(payload.email)})` : ''),
     );
   }
 
@@ -332,13 +415,15 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     const sizeStr = backup.fileSize
       ? formatBytesSimple(BigInt(String(backup.fileSize)))
       : 'unknown size';
-    await this.notify(`Backup completed: ${backup.id ?? ''} (${sizeStr})`);
+    await this.notify(
+      `Backup completed: ${escapeHtml(backup.id ?? '')} (${sizeStr})`,
+    );
   }
 
   async notifyBackupFailed(backup: BackupLike): Promise<void> {
     await this.notify(
-      `Backup FAILED: ${backup.id ?? ''}${
-        backup.errorMsg ? ` - ${backup.errorMsg}` : ''
+      `Backup FAILED: ${escapeHtml(backup.id ?? '')}${
+        backup.errorMsg ? ` - ${escapeHtml(backup.errorMsg)}` : ''
       }`,
     );
   }
@@ -396,6 +481,14 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   onBackupFailed(backup: BackupLike) {
     void this.notifyBackupFailed(backup);
   }
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 function formatBytesSimple(bytes: bigint): string {

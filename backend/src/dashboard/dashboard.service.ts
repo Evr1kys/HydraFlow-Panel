@@ -3,6 +3,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { XrayService } from '../xray/xray.service';
 import { UsersService } from '../users/users.service';
 
+const PANEL_STARTED_AT = new Date();
+
 @Injectable()
 export class DashboardService {
   constructor(
@@ -10,6 +12,73 @@ export class DashboardService {
     private readonly xrayService: XrayService,
     private readonly usersService: UsersService,
   ) {}
+
+  async getRecap() {
+    const now = new Date();
+    const [
+      total,
+      active,
+      disabled,
+      expired,
+      users,
+      nodes,
+      enabledNodes,
+      healthyNodes,
+      countriesRows,
+      activeSessions,
+    ] = await Promise.all([
+      this.prisma.user.count(),
+      this.prisma.user.count({ where: { enabled: true } }),
+      this.prisma.user.count({ where: { enabled: false } }),
+      this.prisma.user.count({ where: { expiryDate: { lt: now } } }),
+      this.prisma.user.findMany({
+        select: { trafficUp: true, trafficDown: true },
+      }),
+      this.prisma.node.count(),
+      this.prisma.node.count({ where: { enabled: true } }),
+      this.prisma.node.count({ where: { status: 'online' } }),
+      this.prisma.iSPReport.findMany({
+        select: { country: true },
+        distinct: ['country'],
+      }),
+      this.prisma.activeSession.count(),
+    ]);
+
+    let totalUp = BigInt(0);
+    let totalDown = BigInt(0);
+    for (const u of users) {
+      totalUp += u.trafficUp;
+      totalDown += u.trafficDown;
+    }
+
+    const uptimeSeconds = Math.floor(
+      (now.getTime() - PANEL_STARTED_AT.getTime()) / 1000,
+    );
+
+    const version =
+      process.env.npm_package_version ??
+      process.env.PANEL_VERSION ??
+      '2.0.0';
+
+    return {
+      users: { total, active, expired, disabled },
+      traffic: {
+        totalUp: totalUp.toString(),
+        totalDown: totalDown.toString(),
+        total: (totalUp + totalDown).toString(),
+      },
+      nodes: {
+        total: nodes,
+        enabled: enabledNodes,
+        healthy: healthyNodes,
+      },
+      countries: countriesRows.length,
+      activeSessions,
+      version,
+      startedAt: PANEL_STARTED_AT,
+      uptimeSeconds,
+    };
+  }
 
   async getStats() {
     const userStats = await this.usersService.getStats();

@@ -39,13 +39,14 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { useTranslation } from 'react-i18next';
-import { getDashboardStats } from '../api/dashboard';
+import { getDashboardStats, getDashboardRecap } from '../api/dashboard';
 import { getHealth } from '../api/health';
 import { restartXray } from '../api/xray';
 import { getTrafficHistoryDaily, type TrafficHistoryPointNumeric } from '../api/traffic';
-import type { DashboardStats, ProtocolHealth } from '../types';
+import type { DashboardStats, DashboardRecap, ProtocolHealth } from '../types';
 import { LoadingSkeleton } from '../components/LoadingSkeleton';
 import { EmptyState } from '../components/EmptyState';
+import { RecapCard } from '../components/RecapCard';
 import { extractErrorMessage } from '../api/client';
 
 const cardStyle = {
@@ -421,6 +422,7 @@ function CustomTooltip({ active, payload, label }: ChartTooltipProps) {
 export function DashboardPage() {
   const { t } = useTranslation();
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [recap, setRecap] = useState<DashboardRecap | null>(null);
   const [health, setHealth] = useState<ProtocolHealth[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -433,12 +435,14 @@ export function DashboardPage() {
   const fetchData = async () => {
     setLoadError(null);
     try {
-      const [statsData, healthData] = await Promise.all([
+      const [statsData, healthData, recapData] = await Promise.all([
         getDashboardStats(),
         getHealth(),
+        getDashboardRecap().catch(() => null),
       ]);
       setStats(statsData);
       setHealth(healthData);
+      setRecap(recapData);
     } catch (err) {
       const message = extractErrorMessage(err);
       setLoadError(message);
@@ -582,6 +586,12 @@ export function DashboardPage() {
           </Button>
         </Group>
       </Group>
+
+      {recap && (
+        <Box mb="md">
+          <RecapCard recap={recap} />
+        </Box>
+      )}
 
       <SectionTitle>{t('dashboard.hydraflowUsage')}</SectionTitle>
       <SimpleGrid cols={{ base: 1, sm: 2, lg: 5 }} spacing="md">

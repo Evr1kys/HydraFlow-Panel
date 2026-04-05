@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   Table,
   Button,
@@ -7,6 +7,10 @@ import {
   TextInput,
   NumberInput,
   Modal,
+  Drawer,
+  Tabs,
+  Select,
+  Switch,
   Stack,
   ActionIcon,
   Menu,
@@ -15,9 +19,14 @@ import {
   Progress,
   Paper,
   Badge,
+  CopyButton,
+  Tooltip,
+  Divider,
+  Card,
 } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
+import { QRCodeSVG } from 'qrcode.react';
 import {
   IconPlus,
   IconSearch,
@@ -33,12 +42,18 @@ import {
   IconCalendarPlus,
   IconDevices,
   IconAlertTriangle,
+  IconUser,
+  IconDeviceLaptop,
+  IconCalendarEvent,
+  IconLink,
+  IconCheck,
 } from '@tabler/icons-react';
 import { AreaChart, Area, ResponsiveContainer } from 'recharts';
 import { useTranslation } from 'react-i18next';
 import {
   getUsers,
   createUser,
+  updateUser,
   toggleUser,
   deleteUser,
   bulkEnableUsers,
@@ -46,8 +61,11 @@ import {
   bulkDeleteUsers,
   renewUser,
   resetUserTraffic,
+  getUserDevices,
+  removeUserDevice,
+  revokeUserSubscription,
 } from '../api/users';
-import type { User } from '../types';
+import type { User, UserDevice, TrafficStrategy } from '../types';
 import { LoadingSkeleton } from '../components/LoadingSkeleton';
 import { EmptyState } from '../components/EmptyState';
 import { useFormValidation, validators } from '../hooks/useFormValidation';
@@ -84,6 +102,8 @@ const thStyle = {
   textTransform: 'uppercase' as const,
 };
 
+const GB = 1024 * 1024 * 1024;
+
 function formatBytes(bytesStr: string): string {
   const bytes = Number(bytesStr);
   if (bytes === 0) return '0 B';
@@ -95,7 +115,12 @@ function formatBytes(bytesStr: string): string {
 }
 
 function gbToBytes(gb: number): number {
-  return gb * 1024 * 1024 * 1024;
+  return gb * GB;
+}
+
+function bytesToGb(bytesStr: string | null): number {
+  if (!bytesStr) return 0;
+  return Number(bytesStr) / GB;
 }
 
 function getTrafficPercent(user: User): number | null {
@@ -141,6 +166,23 @@ function getStatusInfo(user: User): { label: string; dotColor: string; key: stri
   return { label: 'Active', dotColor: '#51cf66', key: 'users.statusActive' };
 }
 
+function strategyLabel(strategy: TrafficStrategy): string {
+  switch (strategy) {
+    case 'NO_RESET':
+      return 'Never (manual)';
+    case 'DAY':
+      return 'day';
+    case 'WEEK':
+      return 'week (Monday)';
+    case 'MONTH':
+      return 'month (1st)';
+    case 'MONTH_ROLLING':
+      return '30 days (rolling)';
+    default:
+      return strategy;
+  }
+}
+
 // Generate mini sparkline data for user traffic
 function userSparkline(user: User): { v: number }[] {
   const total = Number(user.trafficUp) + Number(user.trafficDown);
@@ -158,6 +200,786 @@ interface CreateUserFormValues {
   maxDevices: number | '';
 }
 
+const TRAFFIC_STRATEGY_OPTIONS: { value: TrafficStrategy; label: string }[] = [
+  { value: 'NO_RESET', label: 'No reset (manual)' },
+  { value: 'DAY', label: 'Daily' },
+  { value: 'WEEK', label: 'Weekly (Monday)' },
+  { value: 'MONTH', label: 'Monthly (1st)' },
+  { value: 'MONTH_ROLLING', label: 'Rolling 30 days' },
+];
+
+interface UserDrawerProps {
+  user: User | null;
+  opened: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+  canEdit: boolean;
+  canDelete: boolean;
+}
+
+function UserDrawer({
+  user,
+  opened,
+  onClose,
+  onSaved,
+  canEdit,
+  canDelete,
+}: UserDrawerProps) {
+  const [savingGeneral, setSavingGeneral] = useState(false);
+  const [savingTraffic, setSavingTraffic] = useState(false);
+  const [savingExpiry, setSavingExpiry] = useState(false);
+
+  const [email, setEmail] = useState('');
+  const [remark, setRemark] = useState('');
+  const [tag, setTag] = useState('');
+  const [trafficStrategy, setTrafficStrategy] =
+    useState<TrafficStrategy>('NO_RESET');
+  const [hwidDeviceLimit, setHwidDeviceLimit] = useState<number | ''>('');
+  const [enabled, setEnabled] = useState(true);
+
+  const [limitGb, setLimitGb] = useState<number | ''>('');
+  const [expiryDate, setExpiryDate] = useState<Date | null>(null);
+
+  const [devices, setDevices] = useState<UserDevice[]>([]);
+  const [devicesLoading, setDevicesLoading] = useState(false);
+
+  const subLink = useMemo(
+    () =>
+      user
+        ? `${window.location.origin}/sub/${user.subToken}`
+        : '',
+    [user],
+  );
+
+  useEffect(() => {
+    if (!user) return;
+    setEmail(user.email);
+    setRemark(user.remark ?? '');
+    setTag(user.tag ?? '');
+    setTrafficStrategy(user.trafficStrategy);
+    setHwidDeviceLimit(
+      user.hwidDeviceLimit !== null && user.hwidDeviceLimit !== undefined
+        ? user.hwidDeviceLimit
+        : '',
+    );
+    setEnabled(user.enabled);
+    setLimitGb(user.trafficLimit ? Number(user.trafficLimit) / GB : '');
+    setExpiryDate(user.expiryDate ? new Date(user.expiryDate) : null);
+  }, [user]);
+
+  const loadDevices = useCallback(async () => {
+    if (!user) return;
+    setDevicesLoading(true);
+    try {
+      const list = await getUserDevices(user.id);
+      setDevices(list);
+    } catch {
+      notifications.show({
+        title: 'Error',
+        message: 'Failed to load devices',
+        color: 'red',
+      });
+    } finally {
+      setDevicesLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (opened && user) {
+      loadDevices();
+    }
+  }, [opened, user, loadDevices]);
+
+  if (!user) return null;
+
+  const handleSaveGeneral = async () => {
+    setSavingGeneral(true);
+    try {
+      await updateUser(user.id, {
+        email,
+        remark: remark || null,
+        tag: tag || null,
+        trafficStrategy,
+        hwidDeviceLimit:
+          hwidDeviceLimit === '' ? null : Number(hwidDeviceLimit),
+        enabled,
+      });
+      notifications.show({
+        title: 'Saved',
+        message: 'User updated',
+        color: 'teal',
+      });
+      onSaved();
+    } catch (err) {
+      notifications.show({
+        title: 'Error',
+        message: extractErrorMessage(err),
+        color: 'red',
+      });
+    } finally {
+      setSavingGeneral(false);
+    }
+  };
+
+  const handleSaveTraffic = async () => {
+    setSavingTraffic(true);
+    try {
+      const bytes =
+        limitGb === '' || Number(limitGb) === 0
+          ? null
+          : Math.round(gbToBytes(Number(limitGb)));
+      await updateUser(user.id, { trafficLimit: bytes });
+      notifications.show({
+        title: 'Saved',
+        message: 'Traffic limit updated',
+        color: 'teal',
+      });
+      onSaved();
+    } catch (err) {
+      notifications.show({
+        title: 'Error',
+        message: extractErrorMessage(err),
+        color: 'red',
+      });
+    } finally {
+      setSavingTraffic(false);
+    }
+  };
+
+  const handleSaveExpiry = async () => {
+    setSavingExpiry(true);
+    try {
+      await updateUser(user.id, {
+        expiryDate: expiryDate ? expiryDate.toISOString() : null,
+      });
+      notifications.show({
+        title: 'Saved',
+        message: 'Expiration updated',
+        color: 'teal',
+      });
+      onSaved();
+    } catch (err) {
+      notifications.show({
+        title: 'Error',
+        message: extractErrorMessage(err),
+        color: 'red',
+      });
+    } finally {
+      setSavingExpiry(false);
+    }
+  };
+
+  const bumpExpiry = (add: { months?: number; years?: number }) => {
+    const base = expiryDate ? new Date(expiryDate) : new Date();
+    if (add.months) base.setMonth(base.getMonth() + add.months);
+    if (add.years) base.setFullYear(base.getFullYear() + add.years);
+    setExpiryDate(base);
+  };
+
+  const setNever = () => setExpiryDate(new Date('2099-12-31T23:59:59Z'));
+
+  const handleDeleteDevice = async (deviceId: string) => {
+    try {
+      await removeUserDevice(user.id, deviceId);
+      notifications.show({
+        title: 'Removed',
+        message: 'Device removed',
+        color: 'teal',
+      });
+      await loadDevices();
+    } catch (err) {
+      notifications.show({
+        title: 'Error',
+        message: extractErrorMessage(err),
+        color: 'red',
+      });
+    }
+  };
+
+  const handleResetTraffic = async () => {
+    try {
+      await resetUserTraffic(user.id);
+      notifications.show({
+        title: 'Reset',
+        message: 'Traffic counters reset',
+        color: 'teal',
+      });
+      onSaved();
+    } catch (err) {
+      notifications.show({
+        title: 'Error',
+        message: extractErrorMessage(err),
+        color: 'red',
+      });
+    }
+  };
+
+  const handleRevokeSubscription = async () => {
+    try {
+      await revokeUserSubscription(user.id);
+      notifications.show({
+        title: 'Revoked',
+        message: 'Subscription token regenerated',
+        color: 'teal',
+      });
+      onSaved();
+    } catch (err) {
+      notifications.show({
+        title: 'Error',
+        message: extractErrorMessage(err),
+        color: 'red',
+      });
+    }
+  };
+
+  const handleDelete = async () => {
+    try {
+      await deleteUser(user.id);
+      notifications.show({
+        title: 'Deleted',
+        message: 'User deleted',
+        color: 'teal',
+      });
+      onClose();
+      onSaved();
+    } catch (err) {
+      notifications.show({
+        title: 'Error',
+        message: extractErrorMessage(err),
+        color: 'red',
+      });
+    }
+  };
+
+  const usedBytes = Number(user.trafficUp) + Number(user.trafficDown);
+  const lifetimeBytes = Number(user.lifetimeTrafficUsed) + usedBytes;
+
+  return (
+    <Drawer
+      opened={opened}
+      onClose={onClose}
+      position="right"
+      size="xl"
+      padding="lg"
+      title={
+        <Group gap="sm">
+          <IconUser size={18} color="#20C997" stroke={1.8} />
+          <Text fw={600} style={{ color: '#C1C2C5' }}>
+            {user.email}
+          </Text>
+        </Group>
+      }
+      styles={{
+        content: { backgroundColor: '#1E2128' },
+        header: {
+          backgroundColor: '#1E2128',
+          borderBottom: '1px solid rgba(255,255,255,0.06)',
+        },
+        close: { color: '#909296' },
+        body: { padding: 0 },
+      }}
+    >
+      <Tabs
+        defaultValue="general"
+        color="teal"
+        styles={{
+          list: {
+            borderBottom: '1px solid rgba(255,255,255,0.06)',
+            paddingLeft: 16,
+            paddingRight: 16,
+          },
+          tab: {
+            color: '#909296',
+            fontSize: 13,
+            fontWeight: 500,
+          },
+          panel: { padding: 20 },
+        }}
+      >
+        <Tabs.List>
+          <Tabs.Tab
+            value="general"
+            leftSection={<IconUser size={14} stroke={1.8} />}
+          >
+            General
+          </Tabs.Tab>
+          <Tabs.Tab
+            value="traffic"
+            leftSection={<IconRefresh size={14} stroke={1.8} />}
+          >
+            Traffic
+          </Tabs.Tab>
+          <Tabs.Tab
+            value="expiration"
+            leftSection={<IconCalendarEvent size={14} stroke={1.8} />}
+          >
+            Expiration
+          </Tabs.Tab>
+          <Tabs.Tab
+            value="devices"
+            leftSection={<IconDeviceLaptop size={14} stroke={1.8} />}
+          >
+            Devices
+          </Tabs.Tab>
+          <Tabs.Tab
+            value="subscription"
+            leftSection={<IconLink size={14} stroke={1.8} />}
+          >
+            Subscription
+          </Tabs.Tab>
+          <Tabs.Tab
+            value="danger"
+            leftSection={<IconAlertTriangle size={14} stroke={1.8} />}
+            color="red"
+          >
+            Danger
+          </Tabs.Tab>
+        </Tabs.List>
+
+        {/* GENERAL */}
+        <Tabs.Panel value="general">
+          <Stack gap="md">
+            <TextInput
+              label="Email"
+              value={email}
+              onChange={(e) => setEmail(e.currentTarget.value)}
+              styles={inputStyles}
+              disabled={!canEdit}
+            />
+            <TextInput
+              label="Remark"
+              placeholder="Optional note"
+              value={remark}
+              onChange={(e) => setRemark(e.currentTarget.value)}
+              styles={inputStyles}
+              disabled={!canEdit}
+            />
+            <TextInput
+              label="Tag"
+              placeholder="Free-form user tag (for filtering)"
+              value={tag}
+              onChange={(e) => setTag(e.currentTarget.value)}
+              styles={inputStyles}
+              disabled={!canEdit}
+            />
+            <Select
+              label="Traffic strategy"
+              data={TRAFFIC_STRATEGY_OPTIONS}
+              value={trafficStrategy}
+              onChange={(v) =>
+                v && setTrafficStrategy(v as TrafficStrategy)
+              }
+              allowDeselect={false}
+              styles={inputStyles}
+              disabled={!canEdit}
+            />
+            <NumberInput
+              label="HWID device limit"
+              description="Per-user override of maxDevices. Leave empty to use global."
+              value={hwidDeviceLimit}
+              onChange={(v) =>
+                setHwidDeviceLimit(v === '' ? '' : Number(v))
+              }
+              min={0}
+              max={1000}
+              styles={inputStyles}
+              disabled={!canEdit}
+            />
+            <Switch
+              label="Enabled"
+              checked={enabled}
+              onChange={(e) => setEnabled(e.currentTarget.checked)}
+              color="teal"
+              disabled={!canEdit}
+              styles={{ label: { color: '#C1C2C5' } }}
+            />
+            {canEdit && (
+              <Button
+                variant="gradient"
+                gradient={{ from: 'teal', to: 'cyan' }}
+                loading={savingGeneral}
+                onClick={handleSaveGeneral}
+                radius="md"
+              >
+                Save
+              </Button>
+            )}
+          </Stack>
+        </Tabs.Panel>
+
+        {/* TRAFFIC */}
+        <Tabs.Panel value="traffic">
+          <Stack gap="md">
+            <Card style={cardStyle} p="md">
+              <Stack gap={6}>
+                <Group justify="space-between">
+                  <Text size="xs" style={{ color: '#909296' }}>
+                    Upload
+                  </Text>
+                  <Text size="sm" ff="monospace" style={{ color: '#C1C2C5' }}>
+                    {formatBytes(user.trafficUp)}
+                  </Text>
+                </Group>
+                <Group justify="space-between">
+                  <Text size="xs" style={{ color: '#909296' }}>
+                    Download
+                  </Text>
+                  <Text size="sm" ff="monospace" style={{ color: '#C1C2C5' }}>
+                    {formatBytes(user.trafficDown)}
+                  </Text>
+                </Group>
+                <Group justify="space-between">
+                  <Text size="xs" style={{ color: '#909296' }}>
+                    Used
+                  </Text>
+                  <Text size="sm" ff="monospace" fw={600} style={{ color: '#C1C2C5' }}>
+                    {formatBytes(String(usedBytes))}
+                  </Text>
+                </Group>
+                <Group justify="space-between">
+                  <Text size="xs" style={{ color: '#909296' }}>
+                    Lifetime total
+                  </Text>
+                  <Text size="sm" ff="monospace" style={{ color: '#C1C2C5' }}>
+                    {formatBytes(String(lifetimeBytes))}
+                  </Text>
+                </Group>
+              </Stack>
+            </Card>
+            <NumberInput
+              label="Data Limit (GB)"
+              description="Enter data limit in GB, 0 for unlimited"
+              value={limitGb}
+              onChange={(v) => setLimitGb(v === '' ? '' : Number(v))}
+              min={0}
+              max={100000}
+              step={0.1}
+              styles={inputStyles}
+              disabled={!canEdit}
+            />
+            <Text size="xs" style={{ color: '#909296' }}>
+              Current limit:{' '}
+              <Text span fw={600} style={{ color: '#C1C2C5' }}>
+                {user.trafficLimit
+                  ? `${bytesToGb(user.trafficLimit).toFixed(2)} GB`
+                  : 'Unlimited'}
+              </Text>
+            </Text>
+            <Text size="xs" style={{ color: '#909296' }}>
+              Resets every{' '}
+              <Text span fw={600} style={{ color: '#C1C2C5' }}>
+                {strategyLabel(user.trafficStrategy)}
+              </Text>
+              {user.lastTrafficResetAt && (
+                <>
+                  {' '}
+                  · Last reset{' '}
+                  <Text span fw={600} style={{ color: '#C1C2C5' }}>
+                    {new Date(user.lastTrafficResetAt).toLocaleString()}
+                  </Text>
+                </>
+              )}
+            </Text>
+            {canEdit && (
+              <Button
+                variant="gradient"
+                gradient={{ from: 'teal', to: 'cyan' }}
+                loading={savingTraffic}
+                onClick={handleSaveTraffic}
+                radius="md"
+              >
+                Save
+              </Button>
+            )}
+          </Stack>
+        </Tabs.Panel>
+
+        {/* EXPIRATION */}
+        <Tabs.Panel value="expiration">
+          <Stack gap="md">
+            <DateInput
+              label="Expiry date"
+              value={expiryDate}
+              onChange={(v) => setExpiryDate(v)}
+              clearable
+              styles={inputStyles}
+              disabled={!canEdit}
+            />
+            {canEdit && (
+              <Group gap="xs">
+                <Button
+                  size="xs"
+                  variant="light"
+                  color="teal"
+                  radius="md"
+                  onClick={() => bumpExpiry({ months: 1 })}
+                >
+                  +1 month
+                </Button>
+                <Button
+                  size="xs"
+                  variant="light"
+                  color="teal"
+                  radius="md"
+                  onClick={() => bumpExpiry({ months: 3 })}
+                >
+                  +3 months
+                </Button>
+                <Button
+                  size="xs"
+                  variant="light"
+                  color="teal"
+                  radius="md"
+                  onClick={() => bumpExpiry({ years: 1 })}
+                >
+                  +1 year
+                </Button>
+                <Button
+                  size="xs"
+                  variant="light"
+                  color="gray"
+                  radius="md"
+                  onClick={setNever}
+                >
+                  2099 (Never)
+                </Button>
+              </Group>
+            )}
+            {canEdit && (
+              <Button
+                variant="gradient"
+                gradient={{ from: 'teal', to: 'cyan' }}
+                loading={savingExpiry}
+                onClick={handleSaveExpiry}
+                radius="md"
+              >
+                Save
+              </Button>
+            )}
+          </Stack>
+        </Tabs.Panel>
+
+        {/* DEVICES */}
+        <Tabs.Panel value="devices">
+          <Stack gap="sm">
+            {devicesLoading && (
+              <Text size="sm" style={{ color: '#909296' }}>
+                Loading...
+              </Text>
+            )}
+            {!devicesLoading && devices.length === 0 && (
+              <Text size="sm" style={{ color: '#909296' }}>
+                No devices registered
+              </Text>
+            )}
+            {devices.map((d) => (
+              <Card key={d.id} style={cardStyle} p="md">
+                <Group justify="space-between" wrap="nowrap">
+                  <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
+                    <Group gap={8}>
+                      <IconDeviceLaptop
+                        size={14}
+                        color="#909296"
+                        stroke={1.6}
+                      />
+                      <Text size="sm" fw={600} style={{ color: '#C1C2C5' }}>
+                        {d.platform ?? 'Unknown platform'}
+                      </Text>
+                    </Group>
+                    <Text
+                      size="xs"
+                      ff="monospace"
+                      style={{
+                        color: '#5c5f66',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      HWID: {d.hwid}
+                    </Text>
+                    <Text size="xs" style={{ color: '#5c5f66' }}>
+                      Last seen: {new Date(d.lastSeen).toLocaleString()}
+                    </Text>
+                    <Text size="xs" style={{ color: '#5c5f66' }}>
+                      Created: {new Date(d.createdAt).toLocaleString()}
+                    </Text>
+                  </Stack>
+                  {canEdit && (
+                    <Button
+                      size="xs"
+                      variant="light"
+                      color="red"
+                      radius="md"
+                      leftSection={<IconTrash size={12} />}
+                      onClick={() => handleDeleteDevice(d.id)}
+                    >
+                      Delete
+                    </Button>
+                  )}
+                </Group>
+              </Card>
+            ))}
+          </Stack>
+        </Tabs.Panel>
+
+        {/* SUBSCRIPTION */}
+        <Tabs.Panel value="subscription">
+          <Stack gap="md">
+            <TextInput
+              label="Subscription token"
+              value={user.subToken}
+              readOnly
+              styles={inputStyles}
+              rightSection={
+                <CopyButton value={user.subToken}>
+                  {({ copied, copy }) => (
+                    <Tooltip label={copied ? 'Copied' : 'Copy'}>
+                      <ActionIcon
+                        variant="subtle"
+                        color="gray"
+                        onClick={copy}
+                      >
+                        {copied ? (
+                          <IconCheck size={14} />
+                        ) : (
+                          <IconCopy size={14} />
+                        )}
+                      </ActionIcon>
+                    </Tooltip>
+                  )}
+                </CopyButton>
+              }
+            />
+            <TextInput
+              label="Subscription URL"
+              value={subLink}
+              readOnly
+              styles={inputStyles}
+              rightSection={
+                <CopyButton value={subLink}>
+                  {({ copied, copy }) => (
+                    <Tooltip label={copied ? 'Copied' : 'Copy'}>
+                      <ActionIcon
+                        variant="subtle"
+                        color="gray"
+                        onClick={copy}
+                      >
+                        {copied ? (
+                          <IconCheck size={14} />
+                        ) : (
+                          <IconCopy size={14} />
+                        )}
+                      </ActionIcon>
+                    </Tooltip>
+                  )}
+                </CopyButton>
+              }
+            />
+            <Card
+              style={{
+                ...cardStyle,
+                display: 'flex',
+                justifyContent: 'center',
+                padding: 20,
+              }}
+            >
+              <Box
+                style={{
+                  backgroundColor: '#fff',
+                  padding: 12,
+                  borderRadius: 8,
+                  display: 'inline-block',
+                }}
+              >
+                <QRCodeSVG value={subLink} size={192} level="M" />
+              </Box>
+            </Card>
+            {user.shortUuid && (
+              <TextInput
+                label="Short UUID"
+                value={user.shortUuid}
+                readOnly
+                styles={inputStyles}
+              />
+            )}
+          </Stack>
+        </Tabs.Panel>
+
+        {/* DANGER */}
+        <Tabs.Panel value="danger">
+          <Stack gap="md">
+            <Card style={cardStyle} p="md">
+              <Stack gap={8}>
+                <Text size="sm" fw={600} style={{ color: '#C1C2C5' }}>
+                  Reset traffic
+                </Text>
+                <Text size="xs" style={{ color: '#909296' }}>
+                  Move current usage to lifetime counter and zero out up/down.
+                </Text>
+                <Button
+                  size="sm"
+                  color="yellow"
+                  variant="light"
+                  radius="md"
+                  leftSection={<IconRefresh size={14} />}
+                  onClick={handleResetTraffic}
+                  disabled={!canEdit}
+                >
+                  Reset traffic
+                </Button>
+              </Stack>
+            </Card>
+            <Card style={cardStyle} p="md">
+              <Stack gap={8}>
+                <Text size="sm" fw={600} style={{ color: '#C1C2C5' }}>
+                  Revoke subscription
+                </Text>
+                <Text size="xs" style={{ color: '#909296' }}>
+                  Regenerates the subscription token. Existing clients stop
+                  working.
+                </Text>
+                <Button
+                  size="sm"
+                  color="orange"
+                  variant="light"
+                  radius="md"
+                  leftSection={<IconLink size={14} />}
+                  onClick={handleRevokeSubscription}
+                  disabled={!canEdit}
+                >
+                  Revoke subscription
+                </Button>
+              </Stack>
+            </Card>
+            <Divider color="rgba(255,255,255,0.06)" />
+            <Card style={cardStyle} p="md">
+              <Stack gap={8}>
+                <Text size="sm" fw={600} style={{ color: '#ff6b6b' }}>
+                  Delete user
+                </Text>
+                <Text size="xs" style={{ color: '#909296' }}>
+                  Permanently remove the user and all associated data.
+                </Text>
+                <Button
+                  size="sm"
+                  color="red"
+                  variant="light"
+                  radius="md"
+                  leftSection={<IconTrash size={14} />}
+                  onClick={handleDelete}
+                  disabled={!canDelete}
+                >
+                  Delete user
+                </Button>
+              </Stack>
+            </Card>
+          </Stack>
+        </Tabs.Panel>
+      </Tabs>
+    </Drawer>
+  );
+}
+
 export function UsersPage() {
   const { t } = useTranslation();
   const permissions = usePermissions();
@@ -169,6 +991,8 @@ export function UsersPage() {
   const [creating, setCreating] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
+  const [drawerUser, setDrawerUser] = useState<User | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const createForm = useFormValidation<CreateUserFormValues>(
     {
@@ -199,6 +1023,10 @@ export function UsersPage() {
     try {
       const data = await getUsers();
       setUsers(data);
+      // Refresh drawer user from latest server data
+      setDrawerUser((prev) =>
+        prev ? data.find((u) => u.id === prev.id) ?? null : null,
+      );
     } catch (err) {
       const message = extractErrorMessage(err);
       setLoadError(message);
@@ -215,6 +1043,15 @@ export function UsersPage() {
   useEffect(() => {
     fetchUsers();
   }, [fetchUsers]);
+
+  const openDrawer = (user: User) => {
+    setDrawerUser(user);
+    setDrawerOpen(true);
+  };
+
+  const closeDrawer = () => {
+    setDrawerOpen(false);
+  };
 
   const handleCreate = async () => {
     if (!createForm.validate()) return;
@@ -589,6 +1426,20 @@ export function UsersPage() {
                       borderBottom: '1px solid rgba(255,255,255,0.03)',
                       backgroundColor: idx % 2 === 1 ? 'rgba(255,255,255,0.015)' : 'transparent',
                       transition: 'background-color 0.15s ease',
+                      cursor: 'pointer',
+                    }}
+                    onClick={(e) => {
+                      // Don't open drawer if clicking on checkbox or menu
+                      const target = e.target as HTMLElement;
+                      if (
+                        target.closest('input[type="checkbox"]') ||
+                        target.closest('button') ||
+                        target.closest('[role="menu"]') ||
+                        target.closest('.mantine-Menu-dropdown')
+                      ) {
+                        return;
+                      }
+                      openDrawer(user);
                     }}
                     onMouseEnter={(e) => {
                       (e.currentTarget as HTMLElement).style.backgroundColor = '#252A35';
@@ -705,7 +1556,13 @@ export function UsersPage() {
                     <Table.Td>
                       <Menu shadow="md" width={200} position="bottom-end">
                         <Menu.Target>
-                          <ActionIcon variant="subtle" color="gray" radius="md" style={{ color: '#5c5f66' }}>
+                          <ActionIcon
+                            variant="subtle"
+                            color="gray"
+                            radius="md"
+                            style={{ color: '#5c5f66' }}
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <IconDotsVertical size={16} />
                           </ActionIcon>
                         </Menu.Target>
@@ -717,8 +1574,21 @@ export function UsersPage() {
                           }}
                         >
                           <Menu.Item
+                            leftSection={<IconUser size={14} />}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openDrawer(user);
+                            }}
+                            style={{ fontSize: '13px' }}
+                          >
+                            Edit
+                          </Menu.Item>
+                          <Menu.Item
                             leftSection={<IconCopy size={14} />}
-                            onClick={() => handleCopySubLink(user)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCopySubLink(user);
+                            }}
                             style={{ fontSize: '13px' }}
                           >
                             {t('users.copySubLink')}
@@ -727,21 +1597,30 @@ export function UsersPage() {
                             <>
                               <Menu.Item
                                 leftSection={<IconToggleLeft size={14} />}
-                                onClick={() => handleToggle(user.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleToggle(user.id);
+                                }}
                                 style={{ fontSize: '13px' }}
                               >
                                 {user.enabled ? t('users.disable') : t('users.enable')}
                               </Menu.Item>
                               <Menu.Item
                                 leftSection={<IconCalendarPlus size={14} />}
-                                onClick={() => handleRenew(user.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRenew(user.id);
+                                }}
                                 style={{ fontSize: '13px' }}
                               >
                                 {t('users.renew')}
                               </Menu.Item>
                               <Menu.Item
                                 leftSection={<IconRefresh size={14} />}
-                                onClick={() => handleResetTraffic(user.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleResetTraffic(user.id);
+                                }}
                                 style={{ fontSize: '13px' }}
                               >
                                 {t('users.resetTraffic')}
@@ -754,7 +1633,10 @@ export function UsersPage() {
                               <Menu.Item
                                 color="red"
                                 leftSection={<IconTrash size={14} />}
-                                onClick={() => handleDelete(user.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDelete(user.id);
+                                }}
                                 style={{ fontSize: '13px' }}
                               >
                                 {t('users.delete')}
@@ -791,6 +1673,16 @@ export function UsersPage() {
           </Table>
         </Box>
       </Paper>
+
+      {/* User detail drawer */}
+      <UserDrawer
+        user={drawerUser}
+        opened={drawerOpen}
+        onClose={closeDrawer}
+        onSaved={fetchUsers}
+        canEdit={permissions.canEdit}
+        canDelete={permissions.canDelete}
+      />
 
       {/* Create User Modal */}
       <Modal
@@ -833,7 +1725,8 @@ export function UsersPage() {
             styles={inputStyles}
           />
           <NumberInput
-            label={t('users.trafficLimitGB')}
+            label="Data Limit (GB)"
+            description="Enter data limit in GB, 0 for unlimited"
             placeholder="Leave empty for unlimited"
             value={createForm.values.trafficLimitGB}
             onChange={(v) =>

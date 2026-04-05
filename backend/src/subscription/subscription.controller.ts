@@ -1,9 +1,11 @@
-import { Controller, Get, Param, Res, Headers, Query } from '@nestjs/common';
+import { Controller, Get, Param, Res, Req, Headers, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import * as QRCode from 'qrcode';
 import { SubscriptionService } from './subscription.service';
 import { MetricsService } from '../metrics/metrics.service';
+import { SubscriptionHistoryService } from '../subscription-history/subscription-history.service';
+import { PrismaService } from '../prisma/prisma.service';
 
 type SubscriptionFormat = 'v2ray' | 'clash' | 'singbox' | 'outline';
 
@@ -17,13 +19,80 @@ function normalizeFormat(value?: string): SubscriptionFormat | null {
   return null;
 }
 
+function detectPlatform(userAgent: string | undefined, explicit: string | undefined): string {
+  if (explicit) {
+    const p = explicit.toLowerCase();
+    if (p === 'ios' || p === 'android' || p === 'windows' || p === 'macos' || p === 'linux') {
+      return p;
+    }
+  }
+  const ua = (userAgent ?? '').toLowerCase();
+  if (!ua) return 'unknown';
+  if (ua.includes('iphone') || ua.includes('ipad') || ua.includes('ios')) return 'ios';
+  if (ua.includes('android')) return 'android';
+  if (ua.includes('windows')) return 'windows';
+  if (ua.includes('mac os') || ua.includes('macos') || ua.includes('macintosh')) return 'macos';
+  if (ua.includes('linux')) return 'linux';
+  return 'unknown';
+}
+
+function getClientIp(req: Request): string {
+  const fwd = req.headers['x-forwarded-for'];
+  if (typeof fwd === 'string' && fwd.length > 0) {
+    return fwd.split(',')[0]!.trim();
+  }
+  if (Array.isArray(fwd) && fwd.length > 0) {
+    return String(fwd[0]).split(',')[0]!.trim();
+  }
+  return req.ip ?? req.socket?.remoteAddress ?? 'unknown';
+}
+
+function byteLength(content: string | Buffer): number {
+  if (Buffer.isBuffer(content)) return content.length;
+  return Buffer.byteLength(content, 'utf8');
+}
+
 @ApiTags('Subscription')
 @Controller()
 export class SubscriptionController {
   constructor(
     private readonly subscriptionService: SubscriptionService,
     private readonly metricsService: MetricsService,
+    private readonly subHistoryService: SubscriptionHistoryService,
+    private readonly prisma: PrismaService,
   ) {}
+
+  private logSubRequest(
+    token: string,
+    ip: string,
+    userAgent: string | undefined,
+    platform: string,
+    format: string,
+    status: number,
+    size: number,
+  ): void {
+    // Fire-and-forget so we don't slow down the sub response.
+    void (async () => {
+      try {
+        const user = await this.prisma.user.findUnique({
+          where: { subToken: token },
+          select: { id: true },
+        });
+        if (!user) return;
+        await this.subHistoryService.log(
+          user.id,
+          ip,
+          userAgent ?? null,
+          platform,
+          format,
+          status,
+          size,
+        );
+      } catch {
+        // swallow - logging must never break the request
+      }
+    })();
+  }
 
   @Get('sub/:token')
   @ApiOperation({ summary: 'Get subscription links (auto/format-aware)' })
@@ -34,6 +103,7 @@ export class SubscriptionController {
   @ApiResponse({ status: 200, description: 'Subscription content in requested format' })
   async getSubscription(
     @Param('token') token: string,
+    @Req() req: Request,
     @Res() res: Response,
     @Headers('user-agent') userAgent?: string,
     @Query('hwid') hwid?: string,
@@ -41,6 +111,8 @@ export class SubscriptionController {
     @Query('format') format?: string,
   ) {
     const normalized = normalizeFormat(format);
+    const ip = getClientIp(req);
+    const resolvedPlatform = detectPlatform(userAgent, platform);
 
     if (normalized === 'outline') {
       const result = await this.subscriptionService.generateOutlineConfig(token);
@@ -57,6 +129,7 @@ export class SubscriptionController {
       res.setHeader('Profile-Update-Interval', '12');
       res.setHeader('Profile-Title', 'HydraFlow');
       res.send(result.content);
+      this.logSubRequest(token, ip, userAgent, resolvedPlatform, 'outline', 200, byteLength(result.content));
       return;
     }
 
@@ -96,6 +169,7 @@ export class SubscriptionController {
     res.setHeader('Profile-Update-Interval', '12');
     res.setHeader('Profile-Title', 'HydraFlow');
     res.send(result.content);
+    this.logSubRequest(token, ip, userAgent, resolvedPlatform, recordedFormat, 200, byteLength(result.content));
   }
 
   @Get('p/:token')
