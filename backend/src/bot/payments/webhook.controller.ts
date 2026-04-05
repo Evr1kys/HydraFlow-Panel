@@ -14,6 +14,7 @@ import type { Request } from 'express';
 import * as crypto from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PaymentService } from './payment.service';
+import { HeleketProvider } from './providers/heleket.provider';
 
 const YOOKASSA_IP_RANGES = [
   '185.71.76.0/27',
@@ -61,6 +62,7 @@ export class BotWebhookController {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly payments: PaymentService,
+    private readonly heleket: HeleketProvider,
   ) {}
 
   @Post('yookassa')
@@ -148,10 +150,59 @@ export class BotWebhookController {
 
   @Post('heleket')
   @HttpCode(200)
-  async heleket(
+  async heleketWebhook(
     @Body() body: Record<string, unknown>,
   ): Promise<{ ok: boolean }> {
-    this.logger.log(`Heleket webhook stub: ${JSON.stringify(body)}`);
+    // Extract and remove sign before verification
+    const sign = body['sign'];
+    if (!sign || typeof sign !== 'string') {
+      this.logger.warn('Heleket webhook: missing sign');
+      throw new ForbiddenException('Missing signature');
+    }
+    const bodyWithoutSign = { ...body };
+    delete bodyWithoutSign['sign'];
+
+    if (!this.heleket.verifyWebhook(bodyWithoutSign, sign)) {
+      this.logger.warn('Heleket webhook: invalid signature');
+      throw new ForbiddenException('Invalid signature');
+    }
+
+    const status = body['status'] as string | undefined;
+    // Heleket returns: paid, paid_over, fail, cancel, process, check, etc.
+    if (status !== 'paid' && status !== 'paid_over') {
+      this.logger.log(`Heleket webhook: non-terminal status "${status}"`);
+      return { ok: true };
+    }
+
+    // Extract transaction id from description (JSON-encoded metadata)
+    const description = body['description'] as string | undefined;
+    if (!description) {
+      this.logger.warn('Heleket webhook: missing description/metadata');
+      return { ok: true };
+    }
+
+    let metadata: Record<string, unknown>;
+    try {
+      metadata = JSON.parse(description);
+    } catch {
+      this.logger.warn('Heleket webhook: description is not JSON');
+      return { ok: true };
+    }
+
+    const transactionId = metadata['transactionId'] as string | undefined;
+    if (!transactionId) {
+      this.logger.warn('Heleket webhook: no transactionId in metadata');
+      return { ok: true };
+    }
+
+    try {
+      await this.payments.completeTransaction(transactionId);
+      this.logger.log(
+        `Heleket webhook: completed transaction ${transactionId}`,
+      );
+    } catch (err) {
+      this.logger.error('Heleket webhook: completion failed', err);
+    }
     return { ok: true };
   }
 }

@@ -8,16 +8,16 @@ import type {
 } from './payment-provider.interface';
 
 /**
- * Crypto payment provider.
+ * Crypto payment provider (NOWPayments + manual fallback).
  *
- * Currently implemented as a manual-confirmation stub: createPayment
- * generates an invoice id; an admin marks it paid via the manual
- * confirm endpoint (POST /user-billing/manual-confirm/:subscriptionId).
+ * If NOWPAYMENTS_API_KEY is set, creates real crypto invoices via:
+ *   POST https://api.nowpayments.io/v1/invoice
  *
- * TODO: wire up NOWPayments (https://documenter.getpostman.com/view/7907941/2s93JusNJt)
- *   - POST https://api.nowpayments.io/v1/invoice with x-api-key header
- *   - Webhook HMAC-SHA512 signature verification via NOWPAYMENTS_IPN_SECRET
- *   - Accept pay_currency, price_amount, order_id in request
+ * Webhook signature: HMAC-SHA512 of sorted JSON body, using
+ *   NOWPAYMENTS_IPN_SECRET, received in the `x-nowpayments-sig` header.
+ *
+ * If no API key is configured, falls back to manual-confirmation mode:
+ *   admin marks a payment paid via POST /user-billing/manual-confirm.
  */
 @Injectable()
 export class CryptoProvider implements PaymentProvider {
@@ -32,7 +32,7 @@ export class CryptoProvider implements PaymentProvider {
     const apiKey = process.env.NOWPAYMENTS_API_KEY;
 
     if (!apiKey) {
-      // Manual-confirmation stub: return a local invoice id.
+      // Manual-confirmation mode: return a local invoice id.
       const invoiceId = `manual-${randomUUID()}`;
       this.logger.log(
         `Crypto manual invoice ${invoiceId} for ${amount} ${currency} (user=${metadata.userId}, plan=${metadata.plan})`,
@@ -45,7 +45,7 @@ export class CryptoProvider implements PaymentProvider {
       };
     }
 
-    // TODO: NOWPayments real implementation
+    // NOWPayments API call
     const response = await fetch('https://api.nowpayments.io/v1/invoice', {
       method: 'POST',
       headers: {
@@ -90,7 +90,7 @@ export class CryptoProvider implements PaymentProvider {
   ): boolean {
     const ipnSecret = process.env.NOWPAYMENTS_IPN_SECRET;
     if (!ipnSecret) {
-      // Manual stub mode: any webhook is fine (admin-triggered).
+      // Manual-confirmation mode: any webhook is allowed (admin-triggered).
       return true;
     }
     const sigHeader = headers['x-nowpayments-sig'];
@@ -130,7 +130,7 @@ export class CryptoProvider implements PaymentProvider {
       status?: 'succeeded' | 'failed';
     };
 
-    // Manual stub path: admin sends { subscriptionId, status }
+    // Manual-confirmation path: admin sends { subscriptionId, status }
     if (payload.subscriptionId) {
       return {
         externalId: `manual-${payload.subscriptionId}`,

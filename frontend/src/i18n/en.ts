@@ -435,6 +435,10 @@ const en = {
   'telegram.alertsDesc': 'Receive notifications in Telegram',
 
   'sidebar.backup': 'Backup',
+  'sidebar.security': 'Security',
+  'sidebar.admins': 'Admins',
+  'sidebar.apiKeys': 'API Keys',
+  'sidebar.auditLog': 'Audit Log',
 };
 
 export default en;

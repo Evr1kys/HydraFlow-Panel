@@ -406,6 +406,10 @@ const zh = {
   'telegram.alertsDesc': '在 Telegram 中接收通知',
 
   'sidebar.backup': '备份',
+  'sidebar.security': '安全',
+  'sidebar.admins': '管理员',
+  'sidebar.apiKeys': 'API 密钥',
+  'sidebar.auditLog': '审计日志',
 };
 
 export default zh;

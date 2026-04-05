@@ -435,6 +435,10 @@ const ru = {
   'telegram.alertsDesc': 'Получать уведомления в Telegram',
 
   'sidebar.backup': 'Резервные копии',
+  'sidebar.security': 'Безопасность',
+  'sidebar.admins': 'Админы',
+  'sidebar.apiKeys': 'API ключи',
+  'sidebar.auditLog': 'Журнал аудита',
 };
 
 export default ru;
