@@ -3,9 +3,10 @@ import { SubscriptionService } from './subscription.service';
 import { SubscriptionController } from './subscription.controller';
 import { HwidModule } from '../hwid/hwid.module';
 import { MetricsModule } from '../metrics/metrics.module';
+import { SubscriptionTemplatesModule } from '../subscription-templates/subscription-templates.module';
 
 @Module({
-  imports: [HwidModule, MetricsModule],
+  imports: [HwidModule, MetricsModule, SubscriptionTemplatesModule],
   controllers: [SubscriptionController],
   providers: [SubscriptionService],
 })

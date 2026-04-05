@@ -19,6 +19,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { BackupService } from './backup.service';
+import { NoEnvelope } from '../common/decorators/no-envelope.decorator';
 
 @ApiTags('Backup')
 @ApiBearerAuth('default')
@@ -42,6 +43,7 @@ export class BackupController {
   }
 
   @Get(':id/download')
+  @NoEnvelope()
   @ApiOperation({ summary: 'Download a backup file' })
   async download(@Param('id') id: string, @Res() res: Response) {
     const info = await this.backupService.download(id);

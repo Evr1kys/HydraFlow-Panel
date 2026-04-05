@@ -29,6 +29,8 @@ import { BotPromosPage } from './pages/BotPromos';
 import { BotButtonsPage } from './pages/BotButtons';
 import { BotTransactionsPage } from './pages/BotTransactions';
 import { BotBroadcastPage } from './pages/BotBroadcast';
+import { HostsPage } from './pages/Hosts';
+import { SubscriptionTemplatesPage } from './pages/SubscriptionTemplates';
 
 function BoundaryRoute({ children }: { children: React.ReactNode }) {
   return <ErrorBoundary>{children}</ErrorBoundary>;
@@ -259,6 +261,22 @@ export function App() {
               element={
                 <BoundaryRoute>
                   <BotBroadcastPage />
+                </BoundaryRoute>
+              }
+            />
+            <Route
+              path="/hosts"
+              element={
+                <BoundaryRoute>
+                  <HostsPage />
+                </BoundaryRoute>
+              }
+            />
+            <Route
+              path="/subscription-templates"
+              element={
+                <BoundaryRoute>
+                  <SubscriptionTemplatesPage />
                 </BoundaryRoute>
               }
             />

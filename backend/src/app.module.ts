@@ -37,6 +37,9 @@ import { BackupModule } from './backup/backup.module';
 import { BotModule } from './bot/bot.module';
 import { MetadataModule } from './metadata/metadata.module';
 import { SubscriptionHistoryModule } from './subscription-history/subscription-history.module';
+import { HostsModule } from './hosts/hosts.module';
+import { SubscriptionTemplatesModule } from './subscription-templates/subscription-templates.module';
+import { ResponseEnvelopeInterceptor } from './common/response-envelope.interceptor';
 
 @Module({
   imports: [
@@ -75,10 +78,13 @@ import { SubscriptionHistoryModule } from './subscription-history/subscription-h
     BotModule,
     MetadataModule,
     SubscriptionHistoryModule,
+    HostsModule,
+    SubscriptionTemplatesModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerBehindAuthGuard },
     { provide: APP_INTERCEPTOR, useClass: AuditLogInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: ResponseEnvelopeInterceptor },
   ],
 })
 export class AppModule {}

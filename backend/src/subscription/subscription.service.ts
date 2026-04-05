@@ -1,8 +1,24 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { HwidService } from '../hwid/hwid.service';
+import { SubscriptionTemplatesService } from '../subscription-templates/subscription-templates.service';
 
 type ClientFormat = 'base64' | 'clash' | 'singbox';
+
+function mapClientFormatToTemplateType(
+  format: ClientFormat,
+  userAgent: string,
+): string {
+  const ua = userAgent.toLowerCase();
+  if (format === 'clash') {
+    if (ua.includes('stash')) return 'stash';
+    if (ua.includes('mihomo') || ua.includes('meta')) return 'mihomo';
+    return 'clash';
+  }
+  if (format === 'singbox') return 'singbox';
+  if (ua.includes('xray')) return 'xray-json';
+  return 'v2ray';
+}
 
 function formatBytes(bytes: bigint): string {
   const num = Number(bytes);
@@ -63,7 +79,18 @@ export class SubscriptionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly hwidService: HwidService,
+    private readonly subscriptionTemplatesService: SubscriptionTemplatesService,
   ) {}
+
+  private contentTypeForTemplateType(templateType: string): string {
+    if (templateType === 'clash' || templateType === 'mihomo' || templateType === 'stash') {
+      return 'text/yaml; charset=utf-8';
+    }
+    if (templateType === 'singbox' || templateType === 'xray-json') {
+      return 'application/json; charset=utf-8';
+    }
+    return 'text/plain; charset=utf-8';
+  }
 
   private resolveServerIp(
     hostOverrides: Record<string, string>,
@@ -155,6 +182,24 @@ export class SubscriptionService {
 
     const hostOverrides = await this.getHostOverrides(user);
     const clientFormat = detectClientFormat(userAgent);
+
+    // Check for a custom subscription template first
+    const templateType = mapClientFormatToTemplateType(clientFormat, userAgent);
+    const defaultTemplate =
+      await this.subscriptionTemplatesService.getDefaultForClient(templateType);
+    if (defaultTemplate) {
+      const rendered = this.subscriptionTemplatesService.renderTemplate(
+        defaultTemplate.template,
+        user,
+        settings,
+        null,
+      );
+      return {
+        content: rendered,
+        contentType: this.contentTypeForTemplateType(templateType),
+        userInfo,
+      };
+    }
 
     if (clientFormat === 'clash') {
       const clashConfig = this.generateClashConfig(user, settings, hostOverrides);

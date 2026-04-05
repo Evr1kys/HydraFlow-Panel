@@ -6,10 +6,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { Node as NodeModel, Prisma } from '@prisma/client';
 import * as net from 'net';
 import * as https from 'https';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateNodeDto } from './dto/create-node.dto';
+import { NodesPaginatedQueryDto } from './dto/nodes-paginated-query.dto';
+import { PaginatedResult } from '../common/pagination.dto';
 
 export interface SyncResult {
   nodeId: string;
@@ -43,6 +46,69 @@ export class NodesService {
     return this.prisma.node.findMany({
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  async findPaginated(
+    query: NodesPaginatedQueryDto,
+  ): Promise<PaginatedResult<NodeModel>> {
+    const start = query.start ?? 0;
+    const size = query.size ?? 25;
+    const sortOrder: 'asc' | 'desc' = query.sortOrder ?? 'desc';
+
+    const sortableFields = new Set([
+      'createdAt',
+      'name',
+      'status',
+      'lastCheck',
+    ]);
+    const sortBy =
+      query.sortBy && sortableFields.has(query.sortBy)
+        ? query.sortBy
+        : 'createdAt';
+
+    const where: Prisma.NodeWhereInput = {};
+    const andConditions: Prisma.NodeWhereInput[] = [];
+
+    if (query.enabled !== undefined) {
+      andConditions.push({ enabled: query.enabled });
+    }
+    if (query.status !== undefined) {
+      andConditions.push({ status: query.status });
+    }
+    if (query.search && query.search.trim().length > 0) {
+      const term = query.search.trim();
+      andConditions.push({
+        OR: [
+          { name: { contains: term, mode: 'insensitive' } },
+          { address: { contains: term, mode: 'insensitive' } },
+        ],
+      });
+    }
+
+    if (andConditions.length > 0) {
+      where.AND = andConditions;
+    }
+
+    const orderBy: Prisma.NodeOrderByWithRelationInput = {
+      [sortBy]: sortOrder,
+    } as Prisma.NodeOrderByWithRelationInput;
+
+    const [total, items] = await this.prisma.$transaction([
+      this.prisma.node.count({ where }),
+      this.prisma.node.findMany({
+        where,
+        orderBy,
+        skip: start,
+        take: size,
+      }),
+    ]);
+
+    return {
+      items,
+      total,
+      start,
+      size,
+    };
   }
 
   async create(dto: CreateNodeDto) {

@@ -23,7 +23,11 @@ import {
   Tooltip,
   Divider,
   Card,
+  Pagination,
+  Chip,
+  UnstyledButton,
 } from '@mantine/core';
+import { useDebouncedValue } from '@mantine/hooks';
 import { DateInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
 import { QRCodeSVG } from 'qrcode.react';
@@ -47,11 +51,14 @@ import {
   IconCalendarEvent,
   IconLink,
   IconCheck,
+  IconArrowUp,
+  IconArrowDown,
+  IconArrowsSort,
 } from '@tabler/icons-react';
 import { AreaChart, Area, ResponsiveContainer } from 'recharts';
 import { useTranslation } from 'react-i18next';
 import {
-  getUsers,
+  getUsersPaginated,
   createUser,
   updateUser,
   toggleUser,
@@ -65,6 +72,7 @@ import {
   removeUserDevice,
   revokeUserSubscription,
 } from '../api/users';
+import { usePaginated } from '../hooks/usePaginated';
 import type { User, UserDevice, TrafficStrategy } from '../types';
 import { LoadingSkeleton } from '../components/LoadingSkeleton';
 import { EmptyState } from '../components/EmptyState';
@@ -980,19 +988,114 @@ function UserDrawer({
   );
 }
 
+type UserStatusFilter = 'all' | 'active' | 'expired' | 'disabled';
+
+interface SortableHeaderProps {
+  label: string;
+  field: string;
+  sortBy?: string;
+  sortOrder: 'asc' | 'desc';
+  onToggle: (field: string) => void;
+}
+
+function SortableHeader({
+  label,
+  field,
+  sortBy,
+  sortOrder,
+  onToggle,
+}: SortableHeaderProps) {
+  const active = sortBy === field;
+  const Icon = !active
+    ? IconArrowsSort
+    : sortOrder === 'asc'
+      ? IconArrowUp
+      : IconArrowDown;
+  return (
+    <UnstyledButton
+      onClick={() => onToggle(field)}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        color: active ? '#20C997' : '#5c5f66',
+        fontSize: '11px',
+        fontWeight: 700,
+        letterSpacing: '0.8px',
+        textTransform: 'uppercase',
+        cursor: 'pointer',
+      }}
+    >
+      <span>{label}</span>
+      <Icon size={12} stroke={2} />
+    </UnstyledButton>
+  );
+}
+
 export function UsersPage() {
   const { t } = useTranslation();
   const permissions = usePermissions();
-  const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
   const [drawerUser, setDrawerUser] = useState<User | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [searchInput, setSearchInput] = useState('');
+  const [debouncedSearch] = useDebouncedValue(searchInput, 300);
+  const [statusFilter, setStatusFilter] = useState<UserStatusFilter>('all');
+
+  const paginated = usePaginated<User>(getUsersPaginated, {
+    size: 25,
+    sortBy: 'createdAt',
+    sortOrder: 'desc',
+  });
+
+  const {
+    items: users,
+    total,
+    loading,
+    error: loadError,
+    start,
+    size,
+    sortBy,
+    sortOrder,
+    setPage,
+    setSize,
+    toggleSort,
+    setSearch: setPaginatedSearch,
+    setFilter,
+    refetch: fetchUsers,
+  } = paginated;
+
+  // Debounced search -> pagination
+  useEffect(() => {
+    setPaginatedSearch(debouncedSearch);
+  }, [debouncedSearch, setPaginatedSearch]);
+
+  // Status chip filter -> pagination filters
+  useEffect(() => {
+    if (statusFilter === 'all') {
+      setFilter('enabled', undefined);
+      setFilter('expired', undefined);
+    } else if (statusFilter === 'active') {
+      setFilter('enabled', true);
+      setFilter('expired', false);
+    } else if (statusFilter === 'expired') {
+      setFilter('enabled', undefined);
+      setFilter('expired', true);
+    } else if (statusFilter === 'disabled') {
+      setFilter('enabled', false);
+      setFilter('expired', undefined);
+    }
+  }, [statusFilter, setFilter]);
+
+  // Keep drawer user in sync with fresh data
+  useEffect(() => {
+    setDrawerUser((prev) =>
+      prev ? users.find((u) => u.id === prev.id) ?? prev : null,
+    );
+  }, [users]);
 
   const createForm = useFormValidation<CreateUserFormValues>(
     {
@@ -1017,32 +1120,6 @@ export function UsersPage() {
       ),
     },
   );
-
-  const fetchUsers = useCallback(async () => {
-    setLoadError(null);
-    try {
-      const data = await getUsers();
-      setUsers(data);
-      // Refresh drawer user from latest server data
-      setDrawerUser((prev) =>
-        prev ? data.find((u) => u.id === prev.id) ?? null : null,
-      );
-    } catch (err) {
-      const message = extractErrorMessage(err);
-      setLoadError(message);
-      notifications.show({
-        title: t('common.error'),
-        message: t('notification.usersError'),
-        color: 'red',
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, [t]);
-
-  useEffect(() => {
-    fetchUsers();
-  }, [fetchUsers]);
 
   const openDrawer = (user: User) => {
     setDrawerUser(user);
@@ -1174,10 +1251,10 @@ export function UsersPage() {
   };
 
   const toggleAllSelected = () => {
-    if (selectedIds.size === filteredUsers.length) {
+    if (selectedIds.size === users.length) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(filteredUsers.map((u) => u.id)));
+      setSelectedIds(new Set(users.map((u) => u.id)));
     }
   };
 
@@ -1250,13 +1327,10 @@ export function UsersPage() {
     }
   };
 
-  const filteredUsers = users.filter(
-    (u) =>
-      u.email.toLowerCase().includes(search.toLowerCase()) ||
-      (u.remark?.toLowerCase().includes(search.toLowerCase()) ?? false),
-  );
+  const totalPages = Math.max(1, Math.ceil(total / size));
+  const currentPage = Math.floor(start / size) + 1;
 
-  if (loading) {
+  if (loading && users.length === 0) {
     return <LoadingSkeleton variant="table" rows={6} />;
   }
 
@@ -1284,7 +1358,7 @@ export function UsersPage() {
             size="lg"
             style={{ fontFamily: "'JetBrains Mono', monospace" }}
           >
-            {users.length}
+            {total}
           </Badge>
         </Group>
         {permissions.canEdit && (
@@ -1300,22 +1374,44 @@ export function UsersPage() {
         )}
       </Group>
 
-      {/* Search */}
-      <TextInput
-        placeholder={t('users.searchPlaceholder')}
-        leftSection={<IconSearch size={16} color="#5c5f66" />}
-        value={search}
-        onChange={(e) => setSearch(e.currentTarget.value)}
-        radius="md"
-        styles={{
-          input: {
-            backgroundColor: '#1E2128',
-            border: '1px solid rgba(255,255,255,0.06)',
-            color: '#C1C2C5',
-            height: 42,
-          },
-        }}
-      />
+      {/* Search + Filters */}
+      <Group gap="sm" wrap="wrap" align="center">
+        <TextInput
+          placeholder={t('users.searchPlaceholder')}
+          leftSection={<IconSearch size={16} color="#5c5f66" />}
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.currentTarget.value)}
+          radius="md"
+          style={{ flex: 1, minWidth: 240 }}
+          styles={{
+            input: {
+              backgroundColor: '#1E2128',
+              border: '1px solid rgba(255,255,255,0.06)',
+              color: '#C1C2C5',
+              height: 42,
+            },
+          }}
+        />
+        <Chip.Group
+          value={statusFilter}
+          onChange={(v) => setStatusFilter(v as UserStatusFilter)}
+        >
+          <Group gap="xs">
+            <Chip value="all" color="teal" radius="md" size="sm">
+              All
+            </Chip>
+            <Chip value="active" color="teal" radius="md" size="sm">
+              Active
+            </Chip>
+            <Chip value="expired" color="red" radius="md" size="sm">
+              Expired
+            </Chip>
+            <Chip value="disabled" color="yellow" radius="md" size="sm">
+              Disabled
+            </Chip>
+          </Group>
+        </Chip.Group>
+      </Group>
 
       {/* Bulk actions bar */}
       {selectedIds.size > 0 && permissions.canEdit && (
@@ -1394,24 +1490,48 @@ export function UsersPage() {
               >
                 <Table.Th style={{ ...thStyle, width: 40, padding: '12px 16px' }}>
                   <Checkbox
-                    checked={filteredUsers.length > 0 && selectedIds.size === filteredUsers.length}
-                    indeterminate={selectedIds.size > 0 && selectedIds.size < filteredUsers.length}
+                    checked={users.length > 0 && selectedIds.size === users.length}
+                    indeterminate={selectedIds.size > 0 && selectedIds.size < users.length}
                     onChange={toggleAllSelected}
                     color="teal"
                     size="xs"
                   />
                 </Table.Th>
-                <Table.Th style={thStyle}>{t('users.user')}</Table.Th>
+                <Table.Th style={thStyle}>
+                  <SortableHeader
+                    label={t('users.user')}
+                    field="email"
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onToggle={toggleSort}
+                  />
+                </Table.Th>
                 <Table.Th style={thStyle}>{t('users.status')}</Table.Th>
-                <Table.Th style={thStyle}>{t('users.traffic')}</Table.Th>
+                <Table.Th style={thStyle}>
+                  <SortableHeader
+                    label={t('users.traffic')}
+                    field="trafficDown"
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onToggle={toggleSort}
+                  />
+                </Table.Th>
                 <Table.Th style={thStyle}>{t('users.limit')}</Table.Th>
                 <Table.Th style={thStyle}>{t('users.devices')}</Table.Th>
-                <Table.Th style={thStyle}>{t('users.expiry')}</Table.Th>
+                <Table.Th style={thStyle}>
+                  <SortableHeader
+                    label={t('users.expiry')}
+                    field="expiryDate"
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onToggle={toggleSort}
+                  />
+                </Table.Th>
                 <Table.Th style={{ ...thStyle, width: 50 }} />
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
-              {filteredUsers.map((user, idx) => {
+              {users.map((user, idx) => {
                 const statusInfo = getStatusInfo(user);
                 const trafficPercent = getTrafficPercent(user);
                 const totalTraffic = Number(user.trafficUp) + Number(user.trafficDown);
@@ -1649,7 +1769,7 @@ export function UsersPage() {
                   </Table.Tr>
                 );
               })}
-              {filteredUsers.length === 0 && (
+              {users.length === 0 && (
                 <Table.Tr>
                   <Table.Td colSpan={8}>
                     <Box
@@ -1663,7 +1783,9 @@ export function UsersPage() {
                     >
                       <IconUsers size={40} color="#373A40" stroke={1} />
                       <Text ta="center" size="sm" style={{ color: '#5c5f66' }}>
-                        {search ? t('users.noUsersMatch') : t('users.noUsersYet')}
+                        {debouncedSearch
+                          ? t('users.noUsersMatch')
+                          : t('users.noUsersYet')}
                       </Text>
                     </Box>
                   </Table.Td>
@@ -1673,6 +1795,39 @@ export function UsersPage() {
           </Table>
         </Box>
       </Paper>
+
+      {/* Pagination + page size */}
+      <Group justify="space-between" wrap="wrap" gap="md">
+        <Group gap="xs" align="center">
+          <Text size="xs" style={{ color: '#5c5f66' }}>
+            Rows per page
+          </Text>
+          <Select
+            data={['10', '25', '50', '100']}
+            value={String(size)}
+            onChange={(v) => v && setSize(Number(v))}
+            w={80}
+            size="xs"
+            allowDeselect={false}
+            styles={inputStyles}
+          />
+          <Text size="xs" style={{ color: '#5c5f66' }}>
+            {total === 0
+              ? '0'
+              : `${start + 1}-${Math.min(start + size, total)} of ${total}`}
+          </Text>
+        </Group>
+        <Pagination
+          total={totalPages}
+          value={currentPage}
+          onChange={setPage}
+          color="teal"
+          radius="md"
+          size="sm"
+          siblings={1}
+          boundaries={1}
+        />
+      </Group>
 
       {/* User detail drawer */}
       <UserDrawer

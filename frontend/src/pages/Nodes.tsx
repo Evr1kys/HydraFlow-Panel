@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Table,
   Button,
@@ -12,7 +12,12 @@ import {
   Box,
   Paper,
   Badge,
+  Pagination,
+  Select,
+  Chip,
+  UnstyledButton,
 } from '@mantine/core';
+import { useDebouncedValue } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import {
   IconPlus,
@@ -21,10 +26,14 @@ import {
   IconServer,
   IconCircleFilled,
   IconAlertTriangle,
+  IconSearch,
+  IconArrowUp,
+  IconArrowDown,
+  IconArrowsSort,
 } from '@tabler/icons-react';
 import { useTranslation } from 'react-i18next';
 import {
-  getNodes,
+  getNodesPaginated,
   createNode,
   deleteNode,
   checkNodeHealth,
@@ -34,7 +43,7 @@ import { LoadingSkeleton } from '../components/LoadingSkeleton';
 import { EmptyState } from '../components/EmptyState';
 import { useFormValidation, validators } from '../hooks/useFormValidation';
 import { usePermissions } from '../hooks/usePermissions';
-import { extractErrorMessage } from '../api/client';
+import { usePaginated } from '../hooks/usePaginated';
 
 const cardStyle = {
   backgroundColor: '#1E2128',
@@ -73,15 +82,94 @@ interface CreateNodeFormValues {
   apiKey: string;
 }
 
+type NodeStatusFilter = 'all' | 'healthy' | 'error' | 'unknown';
+
+interface SortableHeaderProps {
+  label: string;
+  field: string;
+  sortBy?: string;
+  sortOrder: 'asc' | 'desc';
+  onToggle: (field: string) => void;
+}
+
+function SortableHeader({
+  label,
+  field,
+  sortBy,
+  sortOrder,
+  onToggle,
+}: SortableHeaderProps) {
+  const active = sortBy === field;
+  const Icon = !active
+    ? IconArrowsSort
+    : sortOrder === 'asc'
+      ? IconArrowUp
+      : IconArrowDown;
+  return (
+    <UnstyledButton
+      onClick={() => onToggle(field)}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        color: active ? '#20C997' : '#5c5f66',
+        fontSize: '11px',
+        fontWeight: 700,
+        letterSpacing: '0.8px',
+        textTransform: 'uppercase',
+        cursor: 'pointer',
+      }}
+    >
+      <span>{label}</span>
+      <Icon size={12} stroke={2} />
+    </UnstyledButton>
+  );
+}
+
 export function NodesPage() {
   const { t } = useTranslation();
   const permissions = usePermissions();
-  const [nodes, setNodes] = useState<Node[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [checkingId, setCheckingId] = useState<string | null>(null);
+  const [searchInput, setSearchInput] = useState('');
+  const [debouncedSearch] = useDebouncedValue(searchInput, 300);
+  const [statusFilter, setStatusFilter] = useState<NodeStatusFilter>('all');
+
+  const paginated = usePaginated<Node>(getNodesPaginated, {
+    size: 25,
+    sortBy: 'createdAt',
+    sortOrder: 'desc',
+  });
+
+  const {
+    items: nodes,
+    total,
+    loading,
+    error: loadError,
+    start,
+    size,
+    sortBy,
+    sortOrder,
+    setPage,
+    setSize,
+    toggleSort,
+    setSearch: setPaginatedSearch,
+    setFilter,
+    refetch: fetchNodes,
+  } = paginated;
+
+  useEffect(() => {
+    setPaginatedSearch(debouncedSearch);
+  }, [debouncedSearch, setPaginatedSearch]);
+
+  useEffect(() => {
+    if (statusFilter === 'all') {
+      setFilter('status', undefined);
+    } else {
+      setFilter('status', statusFilter);
+    }
+  }, [statusFilter, setFilter]);
 
   const nodeForm = useFormValidation<CreateNodeFormValues>(
     { name: '', address: '', port: 443, apiKey: '' },
@@ -100,28 +188,6 @@ export function NodesPage() {
       ),
     },
   );
-
-  const fetchNodes = useCallback(async () => {
-    setLoadError(null);
-    try {
-      const data = await getNodes();
-      setNodes(data);
-    } catch (err) {
-      const message = extractErrorMessage(err);
-      setLoadError(message);
-      notifications.show({
-        title: t('common.error'),
-        message: t('notification.nodesError'),
-        color: 'red',
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, [t]);
-
-  useEffect(() => {
-    fetchNodes();
-  }, [fetchNodes]);
 
   const handleCreate = async () => {
     if (!nodeForm.validate()) return;
@@ -175,12 +241,14 @@ export function NodesPage() {
     setCheckingId(id);
     try {
       const updated = await checkNodeHealth(id);
-      setNodes((prev) => prev.map((n) => (n.id === id ? updated : n)));
       notifications.show({
         title: t('common.success'),
-        message: t('notification.healthCheckResult', { status: updated.status }),
-        color: updated.status === 'online' ? 'teal' : 'red',
+        message: t('notification.healthCheckResult', {
+          status: updated.status,
+        }),
+        color: updated.status === 'healthy' ? 'teal' : 'red',
       });
+      await fetchNodes();
     } catch {
       notifications.show({
         title: t('common.error'),
@@ -192,7 +260,10 @@ export function NodesPage() {
     }
   };
 
-  if (loading) {
+  const totalPages = Math.max(1, Math.ceil(total / size));
+  const currentPage = Math.floor(start / size) + 1;
+
+  if (loading && nodes.length === 0) {
     return <LoadingSkeleton variant="table" rows={4} />;
   }
 
@@ -233,7 +304,7 @@ export function NodesPage() {
             size="lg"
             style={{ fontFamily: "'JetBrains Mono', monospace" }}
           >
-            {nodes.length}
+            {total}
           </Badge>
         </Group>
         {permissions.canManageNodes && (
@@ -247,6 +318,45 @@ export function NodesPage() {
             {t('nodes.addNode')}
           </Button>
         )}
+      </Group>
+
+      {/* Search + Filters */}
+      <Group gap="sm" wrap="wrap" align="center">
+        <TextInput
+          placeholder="Search by name or address"
+          leftSection={<IconSearch size={16} color="#5c5f66" />}
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.currentTarget.value)}
+          radius="md"
+          style={{ flex: 1, minWidth: 240 }}
+          styles={{
+            input: {
+              backgroundColor: '#1E2128',
+              border: '1px solid rgba(255,255,255,0.06)',
+              color: '#C1C2C5',
+              height: 42,
+            },
+          }}
+        />
+        <Chip.Group
+          value={statusFilter}
+          onChange={(v) => setStatusFilter(v as NodeStatusFilter)}
+        >
+          <Group gap="xs">
+            <Chip value="all" color="teal" radius="md" size="sm">
+              All
+            </Chip>
+            <Chip value="healthy" color="teal" radius="md" size="sm">
+              Healthy
+            </Chip>
+            <Chip value="error" color="red" radius="md" size="sm">
+              Error
+            </Chip>
+            <Chip value="unknown" color="gray" radius="md" size="sm">
+              Unknown
+            </Chip>
+          </Group>
+        </Chip.Group>
       </Group>
 
       {/* Table */}
@@ -266,19 +376,43 @@ export function NodesPage() {
                   backgroundColor: 'rgba(255,255,255,0.02)',
                 }}
               >
-                <Table.Th style={thStyle}>{t('nodes.name')}</Table.Th>
+                <Table.Th style={thStyle}>
+                  <SortableHeader
+                    label={t('nodes.name')}
+                    field="name"
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onToggle={toggleSort}
+                  />
+                </Table.Th>
                 <Table.Th style={thStyle}>{t('nodes.address')}</Table.Th>
-                <Table.Th style={thStyle}>{t('nodes.status')}</Table.Th>
-                <Table.Th style={thStyle}>{t('nodes.lastChecked')}</Table.Th>
+                <Table.Th style={thStyle}>
+                  <SortableHeader
+                    label={t('nodes.status')}
+                    field="status"
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onToggle={toggleSort}
+                  />
+                </Table.Th>
+                <Table.Th style={thStyle}>
+                  <SortableHeader
+                    label={t('nodes.lastChecked')}
+                    field="lastCheck"
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onToggle={toggleSort}
+                  />
+                </Table.Th>
                 <Table.Th style={{ ...thStyle, width: 100 }}>{t('nodes.actions')}</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
               {nodes.map((node, idx) => {
                 const dotColor =
-                  node.status === 'online'
+                  node.status === 'healthy'
                     ? '#51cf66'
-                    : node.status === 'offline'
+                    : node.status === 'error'
                       ? '#ff6b6b'
                       : '#5c5f66';
                 return (
@@ -379,6 +513,39 @@ export function NodesPage() {
           </Table>
         </Box>
       </Paper>
+
+      {/* Pagination + page size */}
+      <Group justify="space-between" wrap="wrap" gap="md">
+        <Group gap="xs" align="center">
+          <Text size="xs" style={{ color: '#5c5f66' }}>
+            Rows per page
+          </Text>
+          <Select
+            data={['10', '25', '50', '100']}
+            value={String(size)}
+            onChange={(v) => v && setSize(Number(v))}
+            w={80}
+            size="xs"
+            allowDeselect={false}
+            styles={inputStyles}
+          />
+          <Text size="xs" style={{ color: '#5c5f66' }}>
+            {total === 0
+              ? '0'
+              : `${start + 1}-${Math.min(start + size, total)} of ${total}`}
+          </Text>
+        </Group>
+        <Pagination
+          total={totalPages}
+          value={currentPage}
+          onChange={setPage}
+          color="teal"
+          radius="md"
+          size="sm"
+          siblings={1}
+          boundaries={1}
+        />
+      </Group>
 
       {/* Create Node Modal */}
       <Modal

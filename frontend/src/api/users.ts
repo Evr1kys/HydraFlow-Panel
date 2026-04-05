@@ -1,8 +1,32 @@
 import { client } from './client';
 import type { User, UserDevice, TrafficStrategy } from '../types';
+import type { PaginationParams, PaginatedResult } from '../hooks/usePaginated';
 
 export async function getUsers(): Promise<User[]> {
   const response = await client.get<User[]>('/users');
+  return response.data;
+}
+
+export async function getUsersPaginated(
+  params: PaginationParams,
+): Promise<PaginatedResult<User>> {
+  const query: Record<string, string> = {
+    start: String(params.start),
+    size: String(params.size),
+  };
+  if (params.sortBy) query.sortBy = params.sortBy;
+  if (params.sortOrder) query.sortOrder = params.sortOrder;
+  if (params.search) query.search = params.search;
+  if (params.filters) {
+    for (const [key, value] of Object.entries(params.filters)) {
+      if (value !== undefined && value !== null && value !== '') {
+        query[key] = String(value);
+      }
+    }
+  }
+  const response = await client.get<PaginatedResult<User>>('/users/paginated', {
+    params: query,
+  });
   return response.data;
 }
 

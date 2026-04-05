@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -28,6 +29,7 @@ import { BulkDeleteByStatusDto } from './dto/bulk-delete-by-status.dto';
 import { BulkAllExtendExpirationDto } from './dto/bulk-all-extend-expiration.dto';
 import { BulkAllBaseDto } from './dto/bulk-all-base.dto';
 import { ResolveUserDto } from './dto/resolve-user.dto';
+import { UsersPaginatedQueryDto } from './dto/users-paginated-query.dto';
 
 @ApiTags('Users')
 @ApiBearerAuth('default')
@@ -41,6 +43,13 @@ export class UsersController {
   @ApiResponse({ status: 200, description: 'Array of users' })
   findAll() {
     return this.usersService.findAll();
+  }
+
+  @Get('paginated')
+  @ApiOperation({ summary: 'List users with pagination, sorting, filtering' })
+  @ApiResponse({ status: 200, description: 'Paginated users result' })
+  findPaginated(@Query() query: UsersPaginatedQueryDto) {
+    return this.usersService.findPaginated(query);
   }
 
   @Get('tags')

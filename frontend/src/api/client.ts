@@ -43,6 +43,22 @@ export function extractErrorMessage(error: unknown): string {
   return 'Unknown error';
 }
 
+// Auto-unwrap `{ response: T }` envelope returned by the backend interceptor.
+// The backend wraps every /api/* JSON response in a single-key envelope; we
+// unwrap it here so callers keep working with bare payloads.
+client.interceptors.response.use((resp) => {
+  if (
+    resp.data &&
+    typeof resp.data === 'object' &&
+    !Array.isArray(resp.data) &&
+    'response' in resp.data &&
+    Object.keys(resp.data as Record<string, unknown>).length === 1
+  ) {
+    resp.data = (resp.data as { response: unknown }).response;
+  }
+  return resp;
+});
+
 client.interceptors.response.use(
   (response) => response,
   (error) => {

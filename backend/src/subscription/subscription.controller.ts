@@ -6,6 +6,7 @@ import { SubscriptionService } from './subscription.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { SubscriptionHistoryService } from '../subscription-history/subscription-history.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { NoEnvelope } from '../common/decorators/no-envelope.decorator';
 
 type SubscriptionFormat = 'v2ray' | 'clash' | 'singbox' | 'outline';
 
@@ -53,6 +54,7 @@ function byteLength(content: string | Buffer): number {
 }
 
 @ApiTags('Subscription')
+@NoEnvelope()
 @Controller()
 export class SubscriptionController {
   constructor(

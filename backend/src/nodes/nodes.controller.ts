@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -18,6 +19,7 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { NodesService } from './nodes.service';
 import { CreateNodeDto } from './dto/create-node.dto';
+import { NodesPaginatedQueryDto } from './dto/nodes-paginated-query.dto';
 
 @ApiTags('Nodes')
 @ApiBearerAuth('default')
@@ -31,6 +33,13 @@ export class NodesController {
   @ApiResponse({ status: 200, description: 'Array of nodes' })
   findAll() {
     return this.nodesService.findAll();
+  }
+
+  @Get('paginated')
+  @ApiOperation({ summary: 'List nodes with pagination, sorting, filtering' })
+  @ApiResponse({ status: 200, description: 'Paginated nodes result' })
+  findPaginated(@Query() query: NodesPaginatedQueryDto) {
+    return this.nodesService.findPaginated(query);
   }
 
   @Post()

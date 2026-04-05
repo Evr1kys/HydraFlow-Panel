@@ -39,6 +39,8 @@ import {
   IconLayoutGrid,
   IconBroadcast,
   IconReceipt2,
+  IconServerBolt,
+  IconFileCode2,
 } from '@tabler/icons-react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from './AuthProvider';
@@ -68,6 +70,7 @@ const navSections: NavSection[] = [
     items: [
       { labelKey: 'sidebar.users', icon: IconUsers, path: '/users' },
       { labelKey: 'sidebar.nodes', icon: IconServer, path: '/nodes' },
+      { labelKey: 'sidebar.hosts', icon: IconServerBolt, path: '/hosts' },
       { labelKey: 'sidebar.squads', icon: IconUsersGroup, path: '/squads' },
       { labelKey: 'sidebar.configProfiles', icon: IconFileCode, path: '/config-profiles' },
     ],
@@ -97,6 +100,7 @@ const navSections: NavSection[] = [
     items: [
       { labelKey: 'sidebar.configuration', icon: IconSettings, path: '/settings' },
       { labelKey: 'sidebar.configEditor', icon: IconCode, path: '/config-editor' },
+      { labelKey: 'sidebar.subscriptionTemplates', icon: IconFileCode2, path: '/subscription-templates' },
       { labelKey: 'sidebar.migration', icon: IconDatabaseImport, path: '/migration' },
       { labelKey: 'sidebar.backup', icon: IconDatabaseBackup, path: '/backup' },
     ],

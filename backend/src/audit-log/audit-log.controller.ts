@@ -15,6 +15,7 @@ import {
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AuditLogService } from './audit-log.service';
+import { NoEnvelope } from '../common/decorators/no-envelope.decorator';
 
 @ApiTags('AuditLog')
 @ApiBearerAuth('default')
@@ -54,6 +55,7 @@ export class AuditLogController {
   }
 
   @Get('export')
+  @NoEnvelope()
   @ApiOperation({ summary: 'Export audit logs as CSV' })
   @ApiResponse({ status: 200, description: 'CSV file' })
   async export(

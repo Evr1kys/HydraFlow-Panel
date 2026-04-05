@@ -159,6 +159,56 @@ model Node {
   plugins        NodePlugin[]
   activeSessions ActiveSession[]
   metadata       NodeMeta[]
+  hostLinks      HostsToNodes[]
+}
+
+model Host {
+  id          String         @id @default(uuid())
+  remark      String
+  protocol    String
+  port        Int
+  sni         String?
+  path        String?
+  host        String?
+  security    String         @default("reality")
+  flow        String?
+  fingerprint String?        @default("chrome")
+  publicKey   String?
+  shortId     String?
+  alpn        String[]       @default([])
+  network     String         @default("tcp")
+  serviceName String?
+  headerType  String?
+  enabled     Boolean        @default(true)
+  sortOrder   Int            @default(0)
+  nodes       HostsToNodes[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([protocol, enabled])
+}
+
+model HostsToNodes {
+  hostId String
+  nodeId String
+  host   Host   @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  node   Node   @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@id([hostId, nodeId])
+}
+
+model SubscriptionTemplate {
+  id         String   @id @default(uuid())
+  name       String
+  clientType String
+  template   String
+  isDefault  Boolean  @default(false)
+  enabled    Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([clientType, isDefault])
+  @@index([clientType, enabled])
 }
 
 model Webhook {

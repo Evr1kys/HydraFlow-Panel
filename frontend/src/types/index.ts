@@ -287,6 +287,45 @@ export interface ConfigProfile {
   createdAt: string;
 }
 
+export interface Host {
+  id: string;
+  remark: string;
+  protocol: string;
+  port: number;
+  sni: string | null;
+  path: string | null;
+  host: string | null;
+  security: string;
+  flow: string | null;
+  fingerprint: string | null;
+  publicKey: string | null;
+  shortId: string | null;
+  alpn: string[];
+  network: string;
+  serviceName: string | null;
+  headerType: string | null;
+  enabled: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+  nodes?: Array<{
+    hostId: string;
+    nodeId: string;
+    node: Node;
+  }>;
+}
+
+export interface SubscriptionTemplate {
+  id: string;
+  name: string;
+  clientType: string;
+  template: string;
+  isDefault: boolean;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Device {
   id: string;
   userId: string;

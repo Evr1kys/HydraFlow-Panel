@@ -1,8 +1,32 @@
 import { client } from './client';
 import type { Node } from '../types';
+import type { PaginationParams, PaginatedResult } from '../hooks/usePaginated';
 
 export async function getNodes(): Promise<Node[]> {
   const response = await client.get<Node[]>('/nodes');
+  return response.data;
+}
+
+export async function getNodesPaginated(
+  params: PaginationParams,
+): Promise<PaginatedResult<Node>> {
+  const query: Record<string, string> = {
+    start: String(params.start),
+    size: String(params.size),
+  };
+  if (params.sortBy) query.sortBy = params.sortBy;
+  if (params.sortOrder) query.sortOrder = params.sortOrder;
+  if (params.search) query.search = params.search;
+  if (params.filters) {
+    for (const [key, value] of Object.entries(params.filters)) {
+      if (value !== undefined && value !== null && value !== '') {
+        query[key] = String(value);
+      }
+    }
+  }
+  const response = await client.get<PaginatedResult<Node>>('/nodes/paginated', {
+    params: query,
+  });
   return response.data;
 }
 

@@ -21,6 +21,8 @@ import { BulkDeleteByStatusDto } from './dto/bulk-delete-by-status.dto';
 import { BulkAllExtendExpirationDto } from './dto/bulk-all-extend-expiration.dto';
 import { BulkAllBaseDto } from './dto/bulk-all-base.dto';
 import { BulkAllFiltersDto } from './dto/bulk-all-filters.dto';
+import { UsersPaginatedQueryDto } from './dto/users-paginated-query.dto';
+import { PaginatedResult } from '../common/pagination.dto';
 
 const SHORT_UUID_ALPHABET =
   'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-';
@@ -157,6 +159,91 @@ export class UsersService {
       orderBy: { createdAt: 'desc' },
     });
     return users.map(serializeUser);
+  }
+
+  async findPaginated(
+    query: UsersPaginatedQueryDto,
+  ): Promise<PaginatedResult<SerializedUser>> {
+    const start = query.start ?? 0;
+    const size = query.size ?? 25;
+    const sortOrder: 'asc' | 'desc' = query.sortOrder ?? 'desc';
+
+    const sortableFields = new Set([
+      'createdAt',
+      'email',
+      'expiryDate',
+      'trafficUp',
+      'trafficDown',
+      'lastTrafficResetAt',
+    ]);
+    const sortBy =
+      query.sortBy && sortableFields.has(query.sortBy)
+        ? query.sortBy
+        : 'createdAt';
+
+    const where: Prisma.UserWhereInput = {};
+    const andConditions: Prisma.UserWhereInput[] = [];
+
+    if (query.enabled !== undefined) {
+      andConditions.push({ enabled: query.enabled });
+    }
+    if (query.tag !== undefined) {
+      andConditions.push({ tag: query.tag });
+    }
+    if (query.internalSquadId !== undefined) {
+      andConditions.push({ internalSquadId: query.internalSquadId });
+    }
+    if (query.externalSquadId !== undefined) {
+      andConditions.push({ externalSquadId: query.externalSquadId });
+    }
+    if (query.expired !== undefined) {
+      const now = new Date();
+      if (query.expired) {
+        andConditions.push({ expiryDate: { not: null, lt: now } });
+      } else {
+        andConditions.push({
+          OR: [{ expiryDate: null }, { expiryDate: { gte: now } }],
+        });
+      }
+    }
+
+    if (query.search && query.search.trim().length > 0) {
+      const term = query.search.trim();
+      andConditions.push({
+        OR: [
+          { email: { contains: term, mode: 'insensitive' } },
+          { remark: { contains: term, mode: 'insensitive' } },
+          { tag: { contains: term, mode: 'insensitive' } },
+          { uuid: { contains: term, mode: 'insensitive' } },
+          { subToken: { contains: term, mode: 'insensitive' } },
+        ],
+      });
+    }
+
+    if (andConditions.length > 0) {
+      where.AND = andConditions;
+    }
+
+    const orderBy: Prisma.UserOrderByWithRelationInput = {
+      [sortBy]: sortOrder,
+    } as Prisma.UserOrderByWithRelationInput;
+
+    const [total, rows] = await this.prisma.$transaction([
+      this.prisma.user.count({ where }),
+      this.prisma.user.findMany({
+        where,
+        orderBy,
+        skip: start,
+        take: size,
+      }),
+    ]);
+
+    return {
+      items: rows.map(serializeUser),
+      total,
+      start,
+      size,
+    };
   }
 
   async findOne(id: string): Promise<SerializedUser> {
