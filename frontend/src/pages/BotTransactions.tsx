@@ -118,6 +118,7 @@ export function BotTransactionsPage() {
             </Text>
           </Box>
         ) : (
+          <Box style={{ overflowX: 'auto' }}>
           <Table striped highlightOnHover>
             <Table.Thead>
               <Table.Tr>
@@ -166,8 +167,11 @@ export function BotTransactionsPage() {
               ))}
             </Table.Tbody>
           </Table>
+          </Box>
         )}
       </Paper>
     </>
   );
 }
+
+export default BotTransactionsPage;

@@ -19,6 +19,7 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { BotService } from './bot.service';
+import { BroadcastQueueService } from './broadcast-queue.service';
 import { BotUserService, serializeBotUser } from './services/bot-user.service';
 import { BotPlanService, serializeBotPlan } from './services/bot-plan.service';
 import { BotButtonService } from './services/bot-button.service';
@@ -47,6 +48,7 @@ export class BotAdminController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly bot: BotService,
+    private readonly broadcastQueue: BroadcastQueueService,
     private readonly botUsers: BotUserService,
     private readonly botPlans: BotPlanService,
     private readonly botButtons: BotButtonService,
@@ -269,19 +271,11 @@ export class BotAdminController {
   @Post('broadcast')
   async broadcast(@Body() body: { text: string; onlyActive?: boolean }) {
     if (!body.text || !body.text.trim()) {
-      return { sent: 0, failed: 0, error: 'empty text' };
+      return { queued: 0, error: 'empty text' };
     }
     const ids = await this.botUsers.getAllTelegramIds();
-    let sent = 0;
-    let failed = 0;
-    // Fire-and-forget with light throttling (35ms apart ~30 msgs/sec)
-    for (const tgId of ids) {
-      const ok = await this.bot.sendMessage(tgId, body.text);
-      if (ok) sent += 1;
-      else failed += 1;
-      await new Promise((r) => setTimeout(r, 35));
-    }
-    return { sent, failed };
+    const result = await this.broadcastQueue.enqueueBroadcast(ids, body.text);
+    return { queued: result.queued, broadcastId: result.broadcastId };
   }
 
   // ───── Transactions ──────────────────────────────────────────

@@ -444,3 +444,5 @@ export function AdminsPage() {
     </Stack>
   );
 }
+
+export default AdminsPage;

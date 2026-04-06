@@ -246,3 +246,5 @@ export function MigrationPage() {
     </Stack>
   );
 }
+
+export default MigrationPage;

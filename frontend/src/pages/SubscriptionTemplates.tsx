@@ -686,3 +686,5 @@ export function SubscriptionTemplatesPage() {
     </Stack>
   );
 }
+
+export default SubscriptionTemplatesPage;

@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Bot, Context } from 'grammy';
+import { TelegramService } from '../telegram/telegram.service';
 import { StartHandler } from './handlers/start.handler';
 import { MenuHandler } from './handlers/menu.handler';
 import { BuyHandler } from './handlers/buy.handler';
@@ -21,11 +22,11 @@ type GrammyBot = Bot<Context>;
 export class BotService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(BotService.name);
   private bot: GrammyBot | null = null;
-  private isRunning = false;
 
   constructor(
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly telegramService: TelegramService,
     private readonly botUsers: BotUserService,
     private readonly state: BotStateService,
     private readonly payments: PaymentService,
@@ -46,52 +47,27 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       this.logger.log('Shop bot disabled via BOT_SHOP_ENABLED=false');
       return;
     }
-    const token = this.config.get<string>('TELEGRAM_BOT_TOKEN');
-    if (!token) {
-      this.logger.warn('TELEGRAM_BOT_TOKEN not set, shop bot disabled');
+
+    // Get the shared bot instance from TelegramService
+    const sharedBot = this.telegramService.getBotInstance();
+    if (!sharedBot) {
+      this.logger.warn(
+        'TelegramService has no bot instance (token not set?). Shop bot disabled.',
+      );
       return;
     }
 
-    // If the admin TelegramService is already running the same bot token,
-    // we disable shop bot by default to avoid a 409 Conflict on long-polling.
-    // Use BOT_SHOP_MODE=standalone to force.
-    const mode = this.config.get<string>('BOT_SHOP_MODE') ?? 'standalone';
-    if (mode !== 'standalone') {
-      this.logger.log(`Shop bot mode=${mode}: not starting its own instance`);
-      return;
-    }
+    this.bot = sharedBot;
+    this.registerHandlers(this.bot);
+    this.logger.log('Shop bot handlers registered on shared bot instance');
 
-    try {
-      const grammy = await import('grammy');
-      const bot: GrammyBot = new grammy.Bot(token);
-      this.registerHandlers(bot);
-
-      bot.catch((err) => {
-        this.logger.error('Bot error caught', err);
-      });
-
-      // Start polling; do not await so it runs in background.
-      bot.start({ drop_pending_updates: true }).catch((err) => {
-        this.logger.error('Bot polling error', err);
-      });
-      this.bot = bot;
-      this.isRunning = true;
-      this.logger.log('HydraFlow shop bot started');
-    } catch (err) {
-      this.logger.error('Failed to start shop bot', err);
-    }
+    // Now that both admin + shop handlers are registered, start polling.
+    this.telegramService.startPolling();
   }
 
   async onModuleDestroy(): Promise<void> {
-    if (this.bot && this.isRunning) {
-      try {
-        await this.bot.stop();
-      } catch {
-        /* ignore */
-      }
-      this.isRunning = false;
-      this.logger.log('HydraFlow shop bot stopped');
-    }
+    // Polling lifecycle is managed by TelegramService — nothing to stop here.
+    this.bot = null;
   }
 
   private registerHandlers(bot: GrammyBot): void {
@@ -280,7 +256,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** Send a direct message to a user — used by admin UI broadcast. */
+  /** Send a direct message to a user -- used by admin UI broadcast and notifications. */
   async sendMessage(telegramId: number | bigint, text: string): Promise<boolean> {
     if (!this.bot) return false;
     try {

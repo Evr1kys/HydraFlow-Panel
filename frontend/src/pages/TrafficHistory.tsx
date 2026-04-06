@@ -343,3 +343,5 @@ export function TrafficHistoryPage() {
     </Stack>
   );
 }
+
+export default TrafficHistoryPage;

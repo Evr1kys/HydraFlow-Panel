@@ -467,3 +467,5 @@ export function ConfigEditorPage() {
     </Stack>
   );
 }
+
+export default ConfigEditorPage;

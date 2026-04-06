@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { XrayService } from '../xray/xray.service';
 import { NodesService } from '../nodes/nodes.service';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
+import { encrypt, decrypt, isEncrypted } from '../common/crypto.util';
 
 @Injectable()
 export class SettingsService {
@@ -83,6 +84,26 @@ export class SettingsService {
     return settings;
   }
 
+  private get encryptionSecret(): string {
+    const secret = process.env.JWT_SECRET;
+    if (!secret) throw new Error('JWT_SECRET is required for encryption');
+    return secret;
+  }
+
+  private decryptSmtpPass(smtpPass: string | null): string | null {
+    if (!smtpPass) return null;
+    // If value looks encrypted, decrypt it; otherwise it's legacy plaintext
+    if (isEncrypted(smtpPass)) {
+      try {
+        return decrypt(smtpPass, this.encryptionSecret);
+      } catch (err) {
+        this.logger.warn('Failed to decrypt smtpPass, treating as plaintext');
+        return smtpPass;
+      }
+    }
+    return smtpPass;
+  }
+
   async getEmail() {
     let settings = await this.prisma.emailSettings.findUnique({
       where: { id: 'main' },
@@ -94,6 +115,24 @@ export class SettingsService {
     }
     // never leak the password in GET
     return { ...settings, smtpPass: settings.smtpPass ? '********' : null };
+  }
+
+  /**
+   * Return the raw (decrypted) email config for internal use (e.g. SMTP transport).
+   */
+  async getEmailDecrypted() {
+    let settings = await this.prisma.emailSettings.findUnique({
+      where: { id: 'main' },
+    });
+    if (!settings) {
+      settings = await this.prisma.emailSettings.create({
+        data: { id: 'main' },
+      });
+    }
+    return {
+      ...settings,
+      smtpPass: this.decryptSmtpPass(settings.smtpPass),
+    };
   }
 
   async updateEmail(dto: {
@@ -108,7 +147,12 @@ export class SettingsService {
   }) {
     // If caller sent the masked placeholder, keep existing password
     const data: Record<string, unknown> = { ...dto };
-    if (dto.smtpPass === '********') delete data.smtpPass;
+    if (dto.smtpPass === '********') {
+      delete data.smtpPass;
+    } else if (typeof dto.smtpPass === 'string' && dto.smtpPass.length > 0) {
+      // Encrypt plaintext password before storing
+      data.smtpPass = encrypt(dto.smtpPass, this.encryptionSecret);
+    }
 
     const settings = await this.prisma.emailSettings.upsert({
       where: { id: 'main' },

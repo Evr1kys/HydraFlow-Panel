@@ -224,6 +224,7 @@ export function BackupPage() {
             {t('backup.noBackups')}
           </Text>
         ) : (
+          <Box style={{ overflowX: 'auto' }}>
           <Table
             horizontalSpacing="md"
             verticalSpacing="xs"
@@ -310,6 +311,7 @@ export function BackupPage() {
               ))}
             </Table.Tbody>
           </Table>
+          </Box>
         )}
       </Paper>
 
@@ -358,3 +360,5 @@ export function BackupPage() {
     </Stack>
   );
 }
+
+export default BackupPage;

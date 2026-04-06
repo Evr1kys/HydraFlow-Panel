@@ -1,39 +1,48 @@
+import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, RequireAuth } from './components/AuthProvider';
 import { AppShellLayout } from './components/AppShell';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { LoginPage } from './pages/Login';
-import { DashboardPage } from './pages/Dashboard';
-import { UsersPage } from './pages/Users';
-import { NodesPage } from './pages/Nodes';
-import { SettingsPage } from './pages/Settings';
-import { IntelligencePage } from './pages/Intelligence';
-import { BillingPage } from './pages/Billing';
-import { UserBillingPage } from './pages/UserBilling';
-import { PluginsPage } from './pages/Plugins';
-import { SessionsPage } from './pages/Sessions';
-import { ConfigEditorPage } from './pages/ConfigEditor';
-import { MigrationPage } from './pages/Migration';
-import { SquadsPage } from './pages/Squads';
-import { ConfigProfilesPage } from './pages/ConfigProfiles';
-import { DevicesPage } from './pages/Devices';
-import { TrafficHistoryPage } from './pages/TrafficHistory';
-import { BackupPage } from './pages/Backup';
-import { AuditLogPage } from './pages/AuditLog';
-import { AdminsPage } from './pages/Admins';
-import { ApiKeysPage } from './pages/ApiKeys';
-import { BotPage } from './pages/Bot';
-import { BotUsersPage } from './pages/BotUsers';
-import { BotPlansPage } from './pages/BotPlans';
-import { BotPromosPage } from './pages/BotPromos';
-import { BotButtonsPage } from './pages/BotButtons';
-import { BotTransactionsPage } from './pages/BotTransactions';
-import { BotBroadcastPage } from './pages/BotBroadcast';
-import { HostsPage } from './pages/Hosts';
-import { SubscriptionTemplatesPage } from './pages/SubscriptionTemplates';
+import { LoadingPage } from './components/LoadingPage';
 
-function BoundaryRoute({ children }: { children: React.ReactNode }) {
-  return <ErrorBoundary>{children}</ErrorBoundary>;
+const LoginPage = lazy(() => import('./pages/Login'));
+const DashboardPage = lazy(() => import('./pages/Dashboard'));
+const UsersPage = lazy(() => import('./pages/Users'));
+const NodesPage = lazy(() => import('./pages/Nodes'));
+const SettingsPage = lazy(() => import('./pages/Settings'));
+const IntelligencePage = lazy(() => import('./pages/Intelligence'));
+const BillingPage = lazy(() => import('./pages/Billing'));
+const UserBillingPage = lazy(() => import('./pages/UserBilling'));
+const PluginsPage = lazy(() => import('./pages/Plugins'));
+const SessionsPage = lazy(() => import('./pages/Sessions'));
+const ConfigEditorPage = lazy(() => import('./pages/ConfigEditor'));
+const MigrationPage = lazy(() => import('./pages/Migration'));
+const SquadsPage = lazy(() => import('./pages/Squads'));
+const ConfigProfilesPage = lazy(() => import('./pages/ConfigProfiles'));
+const DevicesPage = lazy(() => import('./pages/Devices'));
+const TrafficHistoryPage = lazy(() => import('./pages/TrafficHistory'));
+const BackupPage = lazy(() => import('./pages/Backup'));
+const AuditLogPage = lazy(() => import('./pages/AuditLog'));
+const AdminsPage = lazy(() => import('./pages/Admins'));
+const ApiKeysPage = lazy(() => import('./pages/ApiKeys'));
+const BotPage = lazy(() => import('./pages/Bot'));
+const BotUsersPage = lazy(() => import('./pages/BotUsers'));
+const BotPlansPage = lazy(() => import('./pages/BotPlans'));
+const BotPromosPage = lazy(() => import('./pages/BotPromos'));
+const BotButtonsPage = lazy(() => import('./pages/BotButtons'));
+const BotTransactionsPage = lazy(() => import('./pages/BotTransactions'));
+const BotBroadcastPage = lazy(() => import('./pages/BotBroadcast'));
+const HostsPage = lazy(() => import('./pages/Hosts'));
+const SubscriptionTemplatesPage = lazy(() => import('./pages/SubscriptionTemplates'));
+
+function LazyRoute({ children }: { children: React.ReactNode }) {
+  return (
+    <ErrorBoundary>
+      <Suspense fallback={<LoadingPage />}>
+        {children}
+      </Suspense>
+    </ErrorBoundary>
+  );
 }
 
 export function App() {
@@ -44,9 +53,9 @@ export function App() {
           <Route
             path="/login"
             element={
-              <BoundaryRoute>
+              <LazyRoute>
                 <LoginPage />
-              </BoundaryRoute>
+              </LazyRoute>
             }
           />
           <Route
@@ -59,225 +68,225 @@ export function App() {
             <Route
               path="/"
               element={
-                <BoundaryRoute>
+                <LazyRoute>
                   <DashboardPage />
-                </BoundaryRoute>
+                </LazyRoute>
               }
             />
             <Route
               path="/users"
               element={
-                <BoundaryRoute>
+                <LazyRoute>
                   <UsersPage />
-                </BoundaryRoute>
+                </LazyRoute>
               }
             />
             <Route
               path="/nodes"
               element={
-                <BoundaryRoute>
+                <LazyRoute>
                   <NodesPage />
-                </BoundaryRoute>
+                </LazyRoute>
               }
             />
             <Route
               path="/squads"
               element={
-                <BoundaryRoute>
+                <LazyRoute>
                   <SquadsPage />
-                </BoundaryRoute>
+                </LazyRoute>
               }
             />
             <Route
               path="/settings"
               element={
-                <BoundaryRoute>
+                <LazyRoute>
                   <SettingsPage />
-                </BoundaryRoute>
+                </LazyRoute>
               }
             />
             <Route
               path="/intelligence"
               element={
-                <BoundaryRoute>
+                <LazyRoute>
                   <IntelligencePage />
-                </BoundaryRoute>
+                </LazyRoute>
               }
             />
             <Route
               path="/billing"
               element={
-                <BoundaryRoute>
+                <LazyRoute>
                   <BillingPage />
-                </BoundaryRoute>
+                </LazyRoute>
               }
             />
             <Route
               path="/user-billing"
               element={
-                <BoundaryRoute>
+                <LazyRoute>
                   <UserBillingPage />
-                </BoundaryRoute>
+                </LazyRoute>
               }
             />
             <Route
               path="/plugins"
               element={
-                <BoundaryRoute>
+                <LazyRoute>
                   <PluginsPage />
-                </BoundaryRoute>
+                </LazyRoute>
               }
             />
             <Route
               path="/sessions"
               element={
-                <BoundaryRoute>
+                <LazyRoute>
                   <SessionsPage />
-                </BoundaryRoute>
+                </LazyRoute>
               }
             />
             <Route
               path="/config-editor"
               element={
-                <BoundaryRoute>
+                <LazyRoute>
                   <ConfigEditorPage />
-                </BoundaryRoute>
+                </LazyRoute>
               }
             />
             <Route
               path="/migration"
               element={
-                <BoundaryRoute>
+                <LazyRoute>
                   <MigrationPage />
-                </BoundaryRoute>
+                </LazyRoute>
               }
             />
             <Route
               path="/config-profiles"
               element={
-                <BoundaryRoute>
+                <LazyRoute>
                   <ConfigProfilesPage />
-                </BoundaryRoute>
+                </LazyRoute>
               }
             />
             <Route
               path="/devices"
               element={
-                <BoundaryRoute>
+                <LazyRoute>
                   <DevicesPage />
-                </BoundaryRoute>
+                </LazyRoute>
               }
             />
             <Route
               path="/traffic-history"
               element={
-                <BoundaryRoute>
+                <LazyRoute>
                   <TrafficHistoryPage />
-                </BoundaryRoute>
+                </LazyRoute>
               }
             />
             <Route
               path="/backup"
               element={
-                <BoundaryRoute>
+                <LazyRoute>
                   <BackupPage />
-                </BoundaryRoute>
+                </LazyRoute>
               }
             />
             <Route
               path="/audit-log"
               element={
-                <BoundaryRoute>
+                <LazyRoute>
                   <AuditLogPage />
-                </BoundaryRoute>
+                </LazyRoute>
               }
             />
             <Route
               path="/admins"
               element={
-                <BoundaryRoute>
+                <LazyRoute>
                   <AdminsPage />
-                </BoundaryRoute>
+                </LazyRoute>
               }
             />
             <Route
               path="/api-keys"
               element={
-                <BoundaryRoute>
+                <LazyRoute>
                   <ApiKeysPage />
-                </BoundaryRoute>
+                </LazyRoute>
               }
             />
             <Route
               path="/bot"
               element={
-                <BoundaryRoute>
+                <LazyRoute>
                   <BotPage />
-                </BoundaryRoute>
+                </LazyRoute>
               }
             />
             <Route
               path="/bot/users"
               element={
-                <BoundaryRoute>
+                <LazyRoute>
                   <BotUsersPage />
-                </BoundaryRoute>
+                </LazyRoute>
               }
             />
             <Route
               path="/bot/plans"
               element={
-                <BoundaryRoute>
+                <LazyRoute>
                   <BotPlansPage />
-                </BoundaryRoute>
+                </LazyRoute>
               }
             />
             <Route
               path="/bot/promos"
               element={
-                <BoundaryRoute>
+                <LazyRoute>
                   <BotPromosPage />
-                </BoundaryRoute>
+                </LazyRoute>
               }
             />
             <Route
               path="/bot/buttons"
               element={
-                <BoundaryRoute>
+                <LazyRoute>
                   <BotButtonsPage />
-                </BoundaryRoute>
+                </LazyRoute>
               }
             />
             <Route
               path="/bot/transactions"
               element={
-                <BoundaryRoute>
+                <LazyRoute>
                   <BotTransactionsPage />
-                </BoundaryRoute>
+                </LazyRoute>
               }
             />
             <Route
               path="/bot/broadcast"
               element={
-                <BoundaryRoute>
+                <LazyRoute>
                   <BotBroadcastPage />
-                </BoundaryRoute>
+                </LazyRoute>
               }
             />
             <Route
               path="/hosts"
               element={
-                <BoundaryRoute>
+                <LazyRoute>
                   <HostsPage />
-                </BoundaryRoute>
+                </LazyRoute>
               }
             />
             <Route
               path="/subscription-templates"
               element={
-                <BoundaryRoute>
+                <LazyRoute>
                   <SubscriptionTemplatesPage />
-                </BoundaryRoute>
+                </LazyRoute>
               }
             />
           </Route>

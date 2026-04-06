@@ -766,3 +766,5 @@ export function BillingPage() {
     </Stack>
   );
 }
+
+export default BillingPage;

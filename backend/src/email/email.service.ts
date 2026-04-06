@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { createTransport, type Transporter } from 'nodemailer';
 import { PrismaService } from '../prisma/prisma.service';
+import { decrypt, isEncrypted } from '../common/crypto.util';
 
 interface EmailPayloadUser {
   email?: string | null;
@@ -33,6 +34,24 @@ export class EmailService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  private decryptSmtpPass(smtpPass: string | null): string | null {
+    if (!smtpPass) return null;
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+      this.logger.warn('JWT_SECRET not set, cannot decrypt smtpPass');
+      return smtpPass;
+    }
+    if (isEncrypted(smtpPass)) {
+      try {
+        return decrypt(smtpPass, secret);
+      } catch {
+        this.logger.warn('Failed to decrypt smtpPass, using as-is');
+        return smtpPass;
+      }
+    }
+    return smtpPass;
+  }
+
   private async getConfig(): Promise<EmailConfig | null> {
     const settings = await this.prisma.emailSettings.findUnique({
       where: { id: 'main' },
@@ -43,7 +62,7 @@ export class EmailService {
       smtpHost: settings.smtpHost,
       smtpPort: settings.smtpPort,
       smtpUser: settings.smtpUser,
-      smtpPass: settings.smtpPass,
+      smtpPass: this.decryptSmtpPass(settings.smtpPass),
       smtpSecure: settings.smtpSecure,
       fromEmail: settings.fromEmail,
       fromName: settings.fromName,

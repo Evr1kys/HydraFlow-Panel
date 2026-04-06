@@ -8,7 +8,9 @@ import {
   Tooltip,
   Badge,
   SegmentedControl,
+  Burger,
 } from '@mantine/core';
+import { useDisclosure, useMediaQuery } from '@mantine/hooks';
 import {
   IconLayoutDashboard,
   IconUsers,
@@ -134,6 +136,8 @@ export function AppShellLayout() {
   const location = useLocation();
   const { logout } = useAuth();
   const { t, i18n } = useTranslation();
+  const [mobileOpen, { toggle: toggleMobile, close: closeMobile }] = useDisclosure(false);
+  const isMobile = useMediaQuery('(max-width: 48em)');
 
   const handleLogout = () => {
     logout();
@@ -155,6 +159,7 @@ export function AppShellLayout() {
       navbar={{
         width: 260,
         breakpoint: 'sm',
+        collapsed: { mobile: !mobileOpen },
       }}
       padding="xl"
       styles={{
@@ -228,7 +233,7 @@ export function AppShellLayout() {
                 return (
                   <UnstyledButton
                     key={item.path}
-                    onClick={() => navigate(item.path)}
+                    onClick={() => { navigate(item.path); if (isMobile) closeMobile(); }}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -344,6 +349,14 @@ export function AppShellLayout() {
             gap: 10,
           }}
         >
+          <Burger
+            opened={mobileOpen}
+            onClick={toggleMobile}
+            hiddenFrom="sm"
+            size="sm"
+            color="#909296"
+            style={{ marginRight: 'auto' }}
+          />
           <Badge
             variant="light"
             color="teal"

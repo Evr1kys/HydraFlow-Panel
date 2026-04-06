@@ -177,3 +177,5 @@ export function BotPage() {
     </>
   );
 }
+
+export default BotPage;

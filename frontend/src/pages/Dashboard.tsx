@@ -911,3 +911,5 @@ export function DashboardPage() {
     </Stack>
   );
 }
+
+export default DashboardPage;

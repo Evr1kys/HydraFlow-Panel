@@ -138,6 +138,7 @@ export function BotUsersPage() {
             </Text>
           </Box>
         ) : (
+          <Box style={{ overflowX: 'auto' }}>
           <Table striped highlightOnHover>
             <Table.Thead>
               <Table.Tr>
@@ -218,6 +219,7 @@ export function BotUsersPage() {
               ))}
             </Table.Tbody>
           </Table>
+          </Box>
         )}
       </Paper>
 
@@ -250,3 +252,5 @@ export function BotUsersPage() {
     </>
   );
 }
+
+export default BotUsersPage;

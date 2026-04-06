@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
+import { TelegramModule } from '../telegram/telegram.module';
 import { BotService } from './bot.service';
 import { BotAdminController } from './bot-admin.controller';
 import { BotWebhookController } from './payments/webhook.controller';
@@ -16,6 +17,7 @@ import { BotButtonService } from './services/bot-button.service';
 import { PromoService } from './services/promo.service';
 import { SubscriptionGrantService } from './services/subscription-grant.service';
 import { BotStateService } from './services/bot-state.service';
+import { BroadcastQueueService } from './broadcast-queue.service';
 import { StartHandler } from './handlers/start.handler';
 import { MenuHandler } from './handlers/menu.handler';
 import { BuyHandler } from './handlers/buy.handler';
@@ -27,10 +29,11 @@ import { HowtoHandler } from './handlers/howto.handler';
 import { AdminHandler } from './handlers/admin.handler';
 
 @Module({
-  imports: [ConfigModule, AuthModule],
+  imports: [ConfigModule, AuthModule, TelegramModule],
   controllers: [BotAdminController, BotWebhookController],
   providers: [
     BotService,
+    BroadcastQueueService,
     KeyboardBuilder,
     BotStateService,
     BotUserService,
@@ -53,6 +56,6 @@ import { AdminHandler } from './handlers/admin.handler';
     HowtoHandler,
     AdminHandler,
   ],
-  exports: [BotService, BotUserService, PaymentService],
+  exports: [BotService, BotUserService, PaymentService, BroadcastQueueService],
 })
 export class BotModule {}

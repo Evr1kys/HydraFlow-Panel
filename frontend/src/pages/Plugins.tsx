@@ -418,3 +418,5 @@ export function PluginsPage() {
     </Stack>
   );
 }
+
+export default PluginsPage;

@@ -4,6 +4,7 @@ import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../prisma/prisma.service';
 import { XrayService } from '../xray/xray.service';
 import { NodesService } from '../nodes/nodes.service';
+import type { Bot, Context } from 'grammy';
 
 interface UserLike {
   email?: string | null;
@@ -32,16 +33,19 @@ interface LoginFailedPayload {
 type InlineButton = { text: string; url: string };
 type InlineKeyboard = InlineButton[][];
 
+type GrammyBot = Bot<Context>;
+
 @Injectable()
 export class TelegramService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TelegramService.name);
-  private bot: { stop: () => void } | null = null;
+  private bot: GrammyBot | null = null;
   private readonly botToken: string | undefined;
   private readonly adminId: string | undefined;
   private readonly adminIds: number[];
   private readonly publicBaseUrl: string;
   private isRunning = false;
   private alertsEnabled = true;
+  private adminHandlersRegistered = false;
 
   constructor(
     private readonly configService: ConfigService,
@@ -84,6 +88,19 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     return { text: 'View All Users', url: this.panelUrl('/users') };
   }
 
+  /**
+   * Returns the shared Bot instance. BotService uses this to register
+   * shop handlers on the same instance, avoiding 409 Conflict.
+   */
+  getBotInstance(): GrammyBot | null {
+    return this.bot;
+  }
+
+  /** Whether admin command handlers have been registered (bot is ready for shop handlers). */
+  isReady(): boolean {
+    return this.adminHandlersRegistered;
+  }
+
   async onModuleInit() {
     if (!this.botToken) {
       this.logger.warn('TELEGRAM_BOT_TOKEN not set, Telegram bot is disabled');
@@ -92,19 +109,33 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
 
     try {
       const grammy = await import('grammy');
-      const bot = new grammy.Bot(this.botToken);
+      const bot: GrammyBot = new grammy.Bot(this.botToken);
 
       this.registerCommands(bot);
-
-      bot.start().catch((err: unknown) => {
-        this.logger.error('Telegram bot polling error', err);
-      });
+      this.adminHandlersRegistered = true;
       this.bot = bot;
-      this.isRunning = true;
-      this.logger.log('Telegram bot started successfully');
+
+      // Note: bot.start() is called in startPolling(), which should be invoked
+      // AFTER BotService has registered its handlers.
+      this.logger.log('Telegram bot instance created, admin handlers registered');
     } catch (err) {
-      this.logger.error('Failed to start Telegram bot', err);
+      this.logger.error('Failed to create Telegram bot', err);
     }
+  }
+
+  /**
+   * Start long-polling. Called after all handlers (admin + shop) are registered.
+   */
+  startPolling(): void {
+    if (!this.bot || this.isRunning) return;
+    this.bot.catch((err: unknown) => {
+      this.logger.error('Telegram bot error', err);
+    });
+    this.bot.start({ drop_pending_updates: true }).catch((err: unknown) => {
+      this.logger.error('Telegram bot polling error', err);
+    });
+    this.isRunning = true;
+    this.logger.log('Telegram bot polling started');
   }
 
   async onModuleDestroy() {
@@ -124,10 +155,11 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     return String(fromId) === this.adminId;
   }
 
-  private registerCommands(bot: InstanceType<typeof import('grammy').Bot>) {
+  private registerCommands(bot: GrammyBot) {
     bot.command('start', async (ctx) => {
       if (!this.isAdminUser(ctx.message?.from?.id)) {
-        await ctx.reply('Unauthorized. This bot is for HydraFlow admins only.');
+        // Non-admin /start is handled by BotService shop handlers (if registered).
+        // If not handled there, just ignore.
         return;
       }
       await ctx.reply(

@@ -132,6 +132,7 @@ export function BotPromosPage() {
             </Text>
           </Box>
         ) : (
+          <Box style={{ overflowX: 'auto' }}>
           <Table striped highlightOnHover>
             <Table.Thead>
               <Table.Tr>
@@ -180,6 +181,7 @@ export function BotPromosPage() {
               ))}
             </Table.Tbody>
           </Table>
+          </Box>
         )}
       </Paper>
 
@@ -230,3 +232,5 @@ export function BotPromosPage() {
     </>
   );
 }
+
+export default BotPromosPage;

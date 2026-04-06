@@ -392,3 +392,5 @@ export function ApiKeysPage() {
     </Stack>
   );
 }
+
+export default ApiKeysPage;

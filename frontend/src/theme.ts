@@ -170,4 +170,10 @@ export const globalStyles = `
       transition: none !important;
     }
   }
+
+  /* Mobile responsive tables */
+  @media (max-width: 768px) {
+    .mantine-Table-table { font-size: 12px; }
+    .mantine-Table-td, .mantine-Table-th { padding: 6px 8px; }
+  }
 `;

@@ -590,3 +590,5 @@ export function LoginPage() {
     </Box>
   );
 }
+
+export default LoginPage;

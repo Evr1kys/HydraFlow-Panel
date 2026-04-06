@@ -466,3 +466,5 @@ export function IntelligencePage() {
     </Stack>
   );
 }
+
+export default IntelligencePage;

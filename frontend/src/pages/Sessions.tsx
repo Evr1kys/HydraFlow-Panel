@@ -351,3 +351,5 @@ export function SessionsPage() {
     </Stack>
   );
 }
+
+export default SessionsPage;

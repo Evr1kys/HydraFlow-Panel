@@ -144,3 +144,5 @@ export function BotBroadcastPage() {
     </>
   );
 }
+
+export default BotBroadcastPage;

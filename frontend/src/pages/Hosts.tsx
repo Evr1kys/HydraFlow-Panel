@@ -751,3 +751,5 @@ export function HostsPage() {
     </Stack>
   );
 }
+
+export default HostsPage;

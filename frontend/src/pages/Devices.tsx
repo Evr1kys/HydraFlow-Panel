@@ -277,3 +277,5 @@ export function DevicesPage() {
     </Stack>
   );
 }
+
+export default DevicesPage;

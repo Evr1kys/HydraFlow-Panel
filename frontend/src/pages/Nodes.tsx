@@ -626,3 +626,5 @@ export function NodesPage() {
     </Stack>
   );
 }
+
+export default NodesPage;

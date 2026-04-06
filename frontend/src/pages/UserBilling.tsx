@@ -815,3 +815,5 @@ export function UserBillingPage() {
     </Stack>
   );
 }
+
+export default UserBillingPage;

@@ -421,3 +421,5 @@ export function ConfigProfilesPage() {
     </Stack>
   );
 }
+
+export default ConfigProfilesPage;

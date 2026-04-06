@@ -455,10 +455,12 @@ export function SettingsPage() {
       <Paper p="lg" style={cardStyle}>
         <Group justify="space-between" mb="md"><Group gap={8}><IconFingerprint size={18} color="#20C997" /><Text size="sm" fw={600} style={{ color: '#C1C2C5' }}>Registered Passkeys</Text></Group><Button size="xs" variant="light" color="teal" radius="md" leftSection={<IconPlus size={14} />} loading={addingPasskey} onClick={handleAddPasskey} styles={{ root: { border: '1px solid rgba(32,201,151,0.2)' } }}>Add Passkey</Button></Group>
         {passkeys.length > 0 ? (
+          <Box style={{ overflowX: 'auto' }}>
           <Table horizontalSpacing="md" verticalSpacing="xs" styles={{ table: { borderCollapse: 'separate', borderSpacing: 0 } }}>
             <Table.Thead><Table.Tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}><Table.Th style={thStyle}>Credential ID</Table.Th><Table.Th style={thStyle}>Created</Table.Th><Table.Th style={{ ...thStyle, width: 60 }} /></Table.Tr></Table.Thead>
             <Table.Tbody>{passkeys.map((pk) => (<Table.Tr key={pk.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}><Table.Td><Text size="xs" ff="monospace" style={{ color: '#909296' }}>{pk.credentialId.substring(0, 24)}...</Text></Table.Td><Table.Td><Text size="xs" style={{ color: '#909296' }}>{new Date(pk.createdAt).toLocaleDateString()}</Text></Table.Td><Table.Td><Button size="xs" variant="subtle" color="red" radius="md" onClick={() => handleDeletePasskey(pk.id)} leftSection={<IconTrash size={12} />} styles={{ root: { padding: '2px 8px' } }}>Remove</Button></Table.Td></Table.Tr>))}</Table.Tbody>
           </Table>
+          </Box>
         ) : (<Text size="sm" style={{ color: '#5c5f66' }}>No passkeys registered</Text>)}
       </Paper>
 
@@ -693,7 +695,7 @@ export function SettingsPage() {
                     </Group>
                   </Group>
                   {expanded && (
-                    <Box style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                    <Box style={{ borderTop: '1px solid rgba(255,255,255,0.06)', overflowX: 'auto' }}>
                       <Table horizontalSpacing="md" verticalSpacing="xs">
                         <Table.Thead>
                           <Table.Tr>
@@ -777,3 +779,5 @@ export function SettingsPage() {
     </Stack>
   );
 }
+
+export default SettingsPage;

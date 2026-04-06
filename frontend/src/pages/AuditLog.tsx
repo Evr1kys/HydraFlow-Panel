@@ -354,3 +354,5 @@ export function AuditLogPage() {
     </Stack>
   );
 }
+
+export default AuditLogPage;

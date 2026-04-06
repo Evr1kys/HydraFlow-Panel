@@ -1935,3 +1935,5 @@ export function UsersPage() {
     </Stack>
   );
 }
+
+export default UsersPage;

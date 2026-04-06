@@ -821,3 +821,5 @@ export function SquadsPage() {
     </Stack>
   );
 }
+
+export default SquadsPage;

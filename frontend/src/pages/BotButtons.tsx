@@ -331,6 +331,7 @@ export function BotButtonsPage() {
               </Text>
             </Box>
           ) : (
+            <Box style={{ overflowX: 'auto' }}>
             <Table striped highlightOnHover>
               <Table.Thead>
                 <Table.Tr>
@@ -414,6 +415,7 @@ export function BotButtonsPage() {
                 ))}
               </Table.Tbody>
             </Table>
+            </Box>
           )}
         </Paper>
       </Stack>
@@ -494,3 +496,5 @@ export function BotButtonsPage() {
     </>
   );
 }
+
+export default BotButtonsPage;
