@@ -28,9 +28,10 @@ export class UpdateUserDto {
   @IsString()
   remark?: string;
 
-  @ApiPropertyOptional({ description: 'Traffic limit in bytes' })
+  @ApiPropertyOptional({ description: 'Traffic limit in bytes (0 or positive)' })
   @IsOptional()
   @IsNumber()
+  @Min(0, { message: 'Traffic limit cannot be negative' })
   trafficLimit?: number;
 
   @ApiPropertyOptional({ description: 'Expiry date (ISO string)' })

@@ -1,4 +1,4 @@
-import { IsString, IsInt, IsOptional, IsBoolean } from 'class-validator';
+import { IsString, IsInt, IsOptional, IsBoolean, Min, Max } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateNodeDto {
@@ -10,8 +10,10 @@ export class CreateNodeDto {
   @IsString()
   address!: string;
 
-  @ApiProperty({ description: 'Node API port', example: 3000 })
+  @ApiProperty({ description: 'Node API port (1-65535)', example: 3000 })
   @IsInt()
+  @Min(1)
+  @Max(65535)
   port!: number;
 
   @ApiPropertyOptional({ description: 'Node API key' })
