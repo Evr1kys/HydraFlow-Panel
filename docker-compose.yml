@@ -1,4 +1,3 @@
-version: '3.8'
 services:
   postgres:
     image: postgres:16-alpine
@@ -6,25 +5,30 @@ services:
     environment:
       POSTGRES_DB: hydraflow
       POSTGRES_USER: hydraflow
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-hydraflow_secret}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hydraflow"]
+      test: ["CMD-SHELL", "pg_isready -U hydraflow -d hydraflow"]
       interval: 5s
       timeout: 3s
-      retries: 5
+      retries: 10
+    security_opt:
+      - no-new-privileges:true
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redisdata:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
-      retries: 5
+      retries: 10
+    security_opt:
+      - no-new-privileges:true
 
   backend:
     build: ./backend
@@ -35,21 +39,22 @@ services:
       redis:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://hydraflow:${DB_PASSWORD:-hydraflow_secret}@postgres:5432/hydraflow
+      NODE_ENV: ${NODE_ENV:-production}
+      DATABASE_URL: postgresql://hydraflow:${DB_PASSWORD:?DB_PASSWORD must be set in .env}@postgres:5432/hydraflow
       REDIS_URL: redis://redis:6379
-      JWT_SECRET: ${JWT_SECRET:-change_this_secret}
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@hydraflow.dev}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
-      CORS_ORIGIN: ${CORS_ORIGIN:-https://panel.hydraflow.xyz,http://localhost:5173}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?ADMIN_EMAIL must be set in .env}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD must be set in .env}
+      CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN must be set in .env}
       SERVER_PUBLIC_IP: ${SERVER_PUBLIC_IP:-}
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://panel.hydraflow.xyz}
-      # Telegram bot (optional)
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?PUBLIC_BASE_URL must be set in .env}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+      NODE_CA_CERT_PATH: ${NODE_CA_CERT_PATH:-}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
       TELEGRAM_ADMIN_ID: ${TELEGRAM_ADMIN_ID:-}
       BOT_SHOP_ENABLED: ${BOT_SHOP_ENABLED:-false}
       BOT_SHOP_MODE: ${BOT_SHOP_MODE:-standalone}
-      # Payment providers (optional)
       YOOKASSA_SHOP_ID: ${YOOKASSA_SHOP_ID:-}
       YOOKASSA_SECRET_KEY: ${YOOKASSA_SECRET_KEY:-}
       CRYPTOBOT_TOKEN: ${CRYPTOBOT_TOKEN:-}
@@ -59,8 +64,10 @@ services:
       NOWPAYMENTS_IPN_SECRET: ${NOWPAYMENTS_IPN_SECRET:-}
     volumes:
       - backupdata:/var/backups/hydraflow
-    ports:
-      - "3100:3000"
+    expose:
+      - "3000"
+    security_opt:
+      - no-new-privileges:true
 
   frontend:
     build: ./frontend
@@ -68,7 +75,9 @@ services:
     depends_on:
       - backend
     ports:
-      - "2080:80"
+      - "127.0.0.1:2080:80"
+    security_opt:
+      - no-new-privileges:true
 
 volumes:
   pgdata:
