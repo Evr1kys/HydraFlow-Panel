@@ -8,6 +8,7 @@ import { JwtStrategy } from './jwt.strategy';
 import { SessionsService } from './sessions.service';
 import { OAuthModule } from './oauth/oauth.module';
 import { PasskeysModule } from './passkeys/passkeys.module';
+import { requireJwtSecret } from './jwt-secret';
 
 @Module({
   imports: [
@@ -16,7 +17,7 @@ import { PasskeysModule } from './passkeys/passkeys.module';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
-        secret: configService.get<string>('JWT_SECRET', 'change_this_secret'),
+        secret: requireJwtSecret(configService),
         signOptions: { expiresIn: '24h' },
       }),
     }),
