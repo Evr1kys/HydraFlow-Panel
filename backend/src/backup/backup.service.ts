@@ -7,15 +7,18 @@ import {
 } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import { spawn, type ChildProcess } from 'child_process';
+import { createReadStream, createWriteStream } from 'fs';
 import { promises as fs } from 'fs';
 import * as path from 'path';
+import { pipeline } from 'stream/promises';
+import { createGunzip, createGzip } from 'zlib';
 import { PrismaService } from '../prisma/prisma.service';
 
-const execAsync = promisify(exec);
-
-const BACKUP_DIR = process.env.BACKUP_DIR ?? '/var/backups/hydraflow';
+const BACKUP_DIR = path.resolve(
+  process.env.BACKUP_DIR ?? '/var/backups/hydraflow',
+);
+const MAX_PROCESS_ERROR = 64 * 1024;
 
 export interface SerializedBackup {
   id: string;
@@ -50,6 +53,37 @@ function serialize(job: {
   };
 }
 
+function processEnv(databaseUrl: string): NodeJS.ProcessEnv {
+  return { ...process.env, PGDATABASE: databaseUrl };
+}
+
+function waitForChild(child: ChildProcess, label: string): Promise<void> {
+  let stderr = '';
+  child.stderr?.setEncoding('utf8');
+  child.stderr?.on('data', (chunk: string | Buffer) => {
+    if (stderr.length < MAX_PROCESS_ERROR) {
+      stderr += String(chunk).slice(0, MAX_PROCESS_ERROR - stderr.length);
+    }
+  });
+  return new Promise((resolve, reject) => {
+    child.once('error', (error) => {
+      reject(new Error(`${label} could not start: ${error.message}`));
+    });
+    child.once('close', (code, signal) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      const suffix = stderr.trim() ? `: ${stderr.trim()}` : '';
+      reject(
+        new Error(
+          `${label} exited with ${signal ? `signal ${signal}` : `code ${String(code)}`}${suffix}`,
+        ),
+      );
+    });
+  });
+}
+
 @Injectable()
 export class BackupService implements OnModuleInit {
   private readonly logger = new Logger(BackupService.name);
@@ -61,12 +95,11 @@ export class BackupService implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     try {
-      await fs.mkdir(BACKUP_DIR, { recursive: true });
+      await fs.mkdir(BACKUP_DIR, { recursive: true, mode: 0o700 });
+      await fs.chmod(BACKUP_DIR, 0o700);
     } catch (err) {
       this.logger.warn(
-        `Could not ensure backup dir ${BACKUP_DIR}: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
+        `Could not secure backup dir ${BACKUP_DIR}: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }
@@ -87,28 +120,50 @@ export class BackupService implements OnModuleInit {
   async create(type: 'manual' | 'scheduled'): Promise<SerializedBackup> {
     const databaseUrl = process.env.DATABASE_URL;
     if (!databaseUrl) {
-      throw new BadRequestException(
-        'DATABASE_URL env var not set, cannot run pg_dump',
-      );
+      throw new BadRequestException('DATABASE_URL env var not set, cannot run pg_dump');
     }
 
     const job = await this.prisma.backupJob.create({
       data: { type, status: 'running' },
     });
 
+    let filePath: string | undefined;
     try {
-      await fs.mkdir(BACKUP_DIR, { recursive: true });
+      await fs.mkdir(BACKUP_DIR, { recursive: true, mode: 0o700 });
       const timestamp = new Date()
         .toISOString()
         .replace(/[:.]/g, '-')
         .replace('T', '_')
         .slice(0, 19);
-      const filePath = path.join(BACKUP_DIR, `${timestamp}.sql.gz`);
+      filePath = path.join(BACKUP_DIR, `${timestamp}-${job.id}.sql.gz`);
 
-      const cmd = `pg_dump "${databaseUrl}" | gzip > "${filePath}"`;
-      await execAsync(cmd, { shell: '/bin/bash', maxBuffer: 1024 * 1024 * 128 });
+      const dump = spawn(
+        'pg_dump',
+        ['--format=plain', '--no-owner', '--no-privileges'],
+        {
+          env: processEnv(databaseUrl),
+          stdio: ['ignore', 'pipe', 'pipe'],
+        },
+      );
+      if (!dump.stdout) throw new Error('pg_dump stdout is unavailable');
+
+      const childDone = waitForChild(dump, 'pg_dump');
+      const pipeDone = pipeline(
+        dump.stdout,
+        createGzip({ level: 9 }),
+        createWriteStream(filePath, { flags: 'wx', mode: 0o600 }),
+      );
+
+      try {
+        await Promise.all([childDone, pipeDone]);
+      } catch (error) {
+        if (!dump.killed) dump.kill('SIGKILL');
+        await Promise.allSettled([childDone, pipeDone]);
+        throw error;
+      }
 
       const stat = await fs.stat(filePath);
+      if (!stat.isFile()) throw new Error('Backup output is not a regular file');
 
       const updated = await this.prisma.backupJob.update({
         where: { id: job.id },
@@ -124,6 +179,9 @@ export class BackupService implements OnModuleInit {
       this.eventEmitter.emit('backup.completed', serialized);
       return serialized;
     } catch (err) {
+      if (filePath) {
+        await fs.rm(filePath, { force: true }).catch(() => undefined);
+      }
       const errorMsg = err instanceof Error ? err.message : String(err);
       this.logger.error(`Backup failed: ${errorMsg}`);
       const updated = await this.prisma.backupJob.update({
@@ -143,29 +201,36 @@ export class BackupService implements OnModuleInit {
   async restore(jobId: string): Promise<{ message: string }> {
     const databaseUrl = process.env.DATABASE_URL;
     if (!databaseUrl) {
-      throw new BadRequestException(
-        'DATABASE_URL env var not set, cannot run psql',
-      );
+      throw new BadRequestException('DATABASE_URL env var not set, cannot run psql');
     }
     const job = await this.prisma.backupJob.findUnique({ where: { id: jobId } });
     if (!job) throw new NotFoundException('Backup job not found');
     if (!job.filePath || job.status !== 'completed') {
       throw new BadRequestException('Backup is not in a restorable state');
     }
-    try {
-      await fs.access(job.filePath);
-    } catch {
-      throw new BadRequestException('Backup file is missing on disk');
+
+    const filePath = await this.assertRegularBackupFile(job.filePath);
+    const psql = spawn(
+      'psql',
+      ['--set', 'ON_ERROR_STOP=1', '--single-transaction'],
+      {
+        env: processEnv(databaseUrl),
+        stdio: ['pipe', 'ignore', 'pipe'],
+      },
+    );
+    if (!psql.stdin) {
+      throw new BadRequestException('psql stdin is unavailable');
     }
 
-    const cmd = `gunzip -c "${job.filePath}" | psql "${databaseUrl}"`;
+    const childDone = waitForChild(psql, 'psql');
+    const pipeDone = pipeline(createReadStream(filePath), createGunzip(), psql.stdin);
+
     try {
-      await execAsync(cmd, {
-        shell: '/bin/bash',
-        maxBuffer: 1024 * 1024 * 128,
-      });
+      await Promise.all([childDone, pipeDone]);
       return { message: 'Restore completed' };
     } catch (err) {
+      if (!psql.killed) psql.kill('SIGKILL');
+      await Promise.allSettled([childDone, pipeDone]);
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(`Restore failed: ${msg}`);
       throw new BadRequestException(`Restore failed: ${msg}`);
@@ -175,15 +240,11 @@ export class BackupService implements OnModuleInit {
   async download(jobId: string): Promise<{ filePath: string; filename: string }> {
     const job = await this.prisma.backupJob.findUnique({ where: { id: jobId } });
     if (!job) throw new NotFoundException('Backup job not found');
-    if (!job.filePath) {
-      throw new BadRequestException('No backup file associated with this job');
+    if (!job.filePath || job.status !== 'completed') {
+      throw new BadRequestException('No completed backup file for this job');
     }
-    try {
-      await fs.access(job.filePath);
-    } catch {
-      throw new BadRequestException('Backup file missing on disk');
-    }
-    return { filePath: job.filePath, filename: path.basename(job.filePath) };
+    const filePath = await this.assertRegularBackupFile(job.filePath);
+    return { filePath, filename: path.basename(filePath) };
   }
 
   async remove(jobId: string): Promise<{ message: string }> {
@@ -191,13 +252,15 @@ export class BackupService implements OnModuleInit {
     if (!job) throw new NotFoundException('Backup job not found');
     if (job.filePath) {
       try {
-        await fs.unlink(job.filePath);
+        const filePath = this.confineBackupPath(job.filePath);
+        await fs.unlink(filePath);
       } catch (err) {
-        this.logger.warn(
-          `Failed to delete backup file ${job.filePath}: ${
-            err instanceof Error ? err.message : String(err)
-          }`,
-        );
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code !== 'ENOENT') {
+          this.logger.warn(
+            `Failed to delete backup file for job ${job.id}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
       }
     }
     await this.prisma.backupJob.delete({ where: { id: jobId } });
@@ -222,5 +285,28 @@ export class BackupService implements OnModuleInit {
   async scheduled(): Promise<void> {
     this.logger.log('Running scheduled backup');
     await this.create('scheduled');
+  }
+
+  private confineBackupPath(storedPath: string): string {
+    const resolved = path.resolve(storedPath);
+    const prefix = `${BACKUP_DIR}${path.sep}`;
+    if (!resolved.startsWith(prefix)) {
+      throw new BadRequestException('Backup path is outside BACKUP_DIR');
+    }
+    return resolved;
+  }
+
+  private async assertRegularBackupFile(storedPath: string): Promise<string> {
+    const filePath = this.confineBackupPath(storedPath);
+    try {
+      const stat = await fs.lstat(filePath);
+      if (!stat.isFile() || stat.isSymbolicLink()) {
+        throw new BadRequestException('Backup path is not a regular file');
+      }
+      return filePath;
+    } catch (err) {
+      if (err instanceof BadRequestException) throw err;
+      throw new BadRequestException('Backup file is missing on disk');
+    }
   }
 }
