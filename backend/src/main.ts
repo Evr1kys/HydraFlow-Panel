@@ -5,29 +5,35 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { PrismaExceptionFilter } from './common/prisma-exception.filter';
 
-async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { rawBody: true });
+function allowedOrigins(): string[] {
+  const configured = process.env['CORS_ORIGIN']
+    ?.split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
 
-  // Security headers (CSP, X-Frame-Options, X-Content-Type-Options, etc.).
-  // CSP is disabled here because the app serves Swagger UI; tune as needed.
+  if (configured && configured.length > 0) {
+    return configured;
+  }
+  if (process.env['NODE_ENV'] === 'production') {
+    throw new Error('CORS_ORIGIN is required in production');
+  }
+  return ['http://localhost:3000', 'http://localhost:5173'];
+}
+
+async function bootstrap(): Promise<void> {
+  const app = await NestFactory.create(AppModule, { rawBody: true });
+  const production = process.env['NODE_ENV'] === 'production';
+  const swaggerEnabled = process.env['SWAGGER_ENABLED'] === 'true' || !production;
+
   app.use(
     helmet({
-      contentSecurityPolicy: false,
+      contentSecurityPolicy: swaggerEnabled ? false : undefined,
       crossOriginEmbedderPolicy: false,
     }),
   );
 
-  // Restrict CORS to the frontend origin(s) configured via env.
-  // CSRF is NOT required because this API only accepts JWT Bearer tokens
-  // in the Authorization header — there are no auth cookies to forge.
-  // If a list of origins is provided (comma-separated), all are allowed.
-  const corsOriginEnv = process.env['CORS_ORIGIN'];
-  const allowedOrigins = corsOriginEnv
-    ? corsOriginEnv.split(',').map((o) => o.trim()).filter(Boolean)
-    : ['http://localhost:3000', 'http://localhost:5173'];
-
   app.enableCors({
-    origin: allowedOrigins,
+    origin: allowedOrigins(),
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Api-Key'],
@@ -40,40 +46,49 @@ async function bootstrap() {
       transform: true,
     }),
   );
-
   app.useGlobalFilters(new PrismaExceptionFilter());
 
-  // Swagger / OpenAPI setup
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('HydraFlow Panel API')
-    .setDescription('Anti-censorship proxy management panel API')
-    .setVersion('2.0.0')
-    .addBearerAuth(
-      {
-        type: 'http',
-        scheme: 'bearer',
-        bearerFormat: 'JWT',
-        description: 'Enter your JWT token from /api/auth/login',
+  if (swaggerEnabled) {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('HydraFlow Panel API')
+      .setDescription('HydraFlow Panel API')
+      .setVersion('2.0.0')
+      .addBearerAuth(
+        {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          description: 'JWT from /api/auth/login',
+        },
+        'default',
+      )
+      .build();
+
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('api/docs', app, document, {
+      swaggerOptions: {
+        persistAuthorization: false,
+        docExpansion: 'list',
+        filter: true,
+        showRequestDuration: true,
       },
-      'default',
-    )
-    .build();
+      customSiteTitle: 'HydraFlow API Docs',
+    });
+  }
 
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('api/docs', app, document, {
-    swaggerOptions: {
-      persistAuthorization: true,
-      docExpansion: 'list',
-      filter: true,
-      showRequestDuration: true,
-    },
-    customSiteTitle: 'HydraFlow API Docs',
-  });
+  const port = Number.parseInt(process.env['PORT'] ?? '3000', 10);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error('PORT must be a valid TCP port');
+  }
 
-  const port = process.env['PORT'] ?? 3000;
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0');
   console.log(`HydraFlow Panel backend running on port ${port}`);
-  console.log(`API docs available at http://localhost:${port}/api/docs`);
+  if (swaggerEnabled) {
+    console.log(`API docs enabled at /api/docs`);
+  }
 }
 
-bootstrap();
+bootstrap().catch((error: unknown) => {
+  console.error('HydraFlow Panel failed to start', error);
+  process.exit(1);
+});
