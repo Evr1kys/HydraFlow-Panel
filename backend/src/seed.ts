@@ -3,23 +3,56 @@ import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
-async function main() {
-  const email = process.env['ADMIN_EMAIL'] ?? 'admin@hydraflow.dev';
-  const password = process.env['ADMIN_PASSWORD'] ?? 'admin';
+function requiredEnv(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new Error(`${name} is required`);
+  }
+  return value;
+}
+
+function validateBootstrapPassword(password: string): void {
+  if (password.length < 16) {
+    throw new Error('ADMIN_PASSWORD must contain at least 16 characters');
+  }
+  const normalized = password.toLowerCase();
+  const blocked = new Set([
+    'admin',
+    'password',
+    'change-me',
+    'changeme',
+    'hydraflow',
+  ]);
+  if (blocked.has(normalized)) {
+    throw new Error('ADMIN_PASSWORD is a known insecure default');
+  }
+}
+
+async function ensureInitialAdmin(): Promise<void> {
+  const existingAdmins = await prisma.admin.count();
+  if (existingAdmins > 0) {
+    console.log('Admin bootstrap skipped: at least one admin already exists');
+    return;
+  }
+
+  const email = requiredEnv('ADMIN_EMAIL').toLowerCase();
+  const password = requiredEnv('ADMIN_PASSWORD');
+  validateBootstrapPassword(password);
 
   const hashedPassword = await bcrypt.hash(password, 12);
-
-  await prisma.admin.upsert({
-    where: { email },
-    update: { password: hashedPassword },
-    create: {
+  await prisma.admin.create({
+    data: {
       email,
       password: hashedPassword,
+      role: 'superadmin',
+      enabled: true,
     },
   });
 
-  console.log(`Admin created: ${email}`);
+  console.log(`Initial superadmin created: ${email}`);
+}
 
+async function ensureDefaultSettings(): Promise<void> {
   await prisma.settings.upsert({
     where: { id: 'main' },
     update: {},
@@ -38,43 +71,20 @@ async function main() {
       adBlocking: true,
     },
   });
+}
 
-  console.log('Default settings created');
-
-  const russianISPs = [
-    { isp: 'Rostelecom', asn: 12389 },
-    { isp: 'MTS', asn: 8359 },
-    { isp: 'MegaFon', asn: 31133 },
-    { isp: 'Beeline', asn: 3216 },
-    { isp: 'Tele2', asn: 15378 },
-    { isp: 'ER-Telecom', asn: 9049 },
-  ];
-
-  const protocols = ['VLESS+Reality', 'VLESS+WebSocket', 'Shadowsocks'];
-  const statuses = ['working', 'working', 'working', 'slow', 'blocked'];
-
-  for (const { isp, asn } of russianISPs) {
-    for (const protocol of protocols) {
-      const status = statuses[Math.floor(Math.random() * statuses.length)];
-      await prisma.iSPReport.create({
-        data: {
-          country: 'Russia',
-          isp,
-          asn,
-          protocol,
-          status: status ?? 'working',
-        },
-      });
-    }
-  }
-
-  console.log('Seed ISP reports created');
+async function main(): Promise<void> {
+  await ensureInitialAdmin();
+  await ensureDefaultSettings();
+  console.log('HydraFlow bootstrap completed');
 }
 
 main()
-  .then(() => prisma.$disconnect())
-  .catch((e) => {
-    console.error(e);
-    prisma.$disconnect();
+  .then(async () => {
+    await prisma.$disconnect();
+  })
+  .catch(async (error: unknown) => {
+    console.error('HydraFlow bootstrap failed', error);
+    await prisma.$disconnect();
     process.exit(1);
   });

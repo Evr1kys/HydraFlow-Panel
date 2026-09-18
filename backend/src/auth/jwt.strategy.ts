@@ -1,7 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
+import { PrismaService } from '../prisma/prisma.service';
+import { requireJwtSecret } from './jwt-secret';
 
 interface JwtPayload {
   sub: string;
@@ -12,21 +14,32 @@ interface JwtPayload {
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor(configService: ConfigService) {
-    const secret = configService.get<string>('JWT_SECRET', 'change_this_secret');
+  constructor(
+    configService: ConfigService,
+    private readonly prisma: PrismaService,
+  ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: secret,
+      secretOrKey: requireJwtSecret(configService),
     });
   }
 
-  validate(payload: JwtPayload) {
+  async validate(payload: JwtPayload) {
+    const admin = await this.prisma.admin.findUnique({
+      where: { id: payload.sub },
+      select: { id: true, email: true, role: true, enabled: true },
+    });
+
+    if (!admin || !admin.enabled) {
+      throw new UnauthorizedException('Account is disabled or no longer exists');
+    }
+
     return {
-      id: payload.sub,
-      email: payload.email,
-      role: payload.role ?? 'admin',
-      enabled: payload.enabled ?? true,
+      id: admin.id,
+      email: admin.email,
+      role: admin.role,
+      enabled: admin.enabled,
     };
   }
 }
