@@ -1,0 +1,45 @@
+name: Adjust Nest runtime
+
+on:
+  push:
+    branches:
+      - fix/panel-secure-dependencies
+
+permissions:
+  contents: write
+
+jobs:
+  adjust:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/panel-secure-dependencies
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.23.2'
+      - run: npm install --global npm@10.9.2
+      - name: Resolve latest patched CommonJS-compatible Nest line
+        working-directory: backend
+        run: |
+          npm install --save-exact \
+            @nestjs/common@11 \
+            @nestjs/config@4 \
+            @nestjs/core@11 \
+            @nestjs/event-emitter@3 \
+            @nestjs/jwt@11 \
+            @nestjs/passport@11 \
+            @nestjs/platform-express@11 \
+            @nestjs/schedule@6 \
+            @nestjs/swagger@11 \
+            @nestjs/throttler@6
+          npm audit --omit=dev --audit-level=high
+      - name: Commit compatible secure runtime
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add backend/package.json backend/package-lock.json
+          git commit -m 'build: use patched CommonJS-compatible Nest runtime'
+          git push origin HEAD:fix/panel-secure-dependencies
