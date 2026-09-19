@@ -5,6 +5,8 @@ import {
   Group,
   Text,
   TextInput,
+  PasswordInput,
+  Textarea,
   NumberInput,
   Modal,
   Stack,
@@ -79,10 +81,13 @@ interface CreateNodeFormValues {
   name: string;
   address: string;
   port: number | '';
+  keyId: string;
   apiKey: string;
+  caCertificate: string;
+  serverName: string;
 }
 
-type NodeStatusFilter = 'all' | 'healthy' | 'error' | 'unknown';
+type NodeStatusFilter = 'all' | 'healthy' | 'degraded' | 'offline' | 'error' | 'unknown';
 
 interface SortableHeaderProps {
   label: string;
@@ -172,7 +177,7 @@ export function NodesPage() {
   }, [statusFilter, setFilter]);
 
   const nodeForm = useFormValidation<CreateNodeFormValues>(
-    { name: '', address: '', port: 443, apiKey: '' },
+    { name: '', address: '', port: 8443, keyId: '', apiKey: '', caCertificate: '', serverName: '' },
     {
       name: validators.combine(
         validators.isNotEmpty(t('validation.required')),
@@ -191,7 +196,7 @@ export function NodesPage() {
 
   const handleCreate = async () => {
     if (!nodeForm.validate()) return;
-    const { name, address, port, apiKey } = nodeForm.values;
+    const { name, address, port, keyId, apiKey, caCertificate, serverName } = nodeForm.values;
     setCreating(true);
     try {
       await createNode({
@@ -201,7 +206,7 @@ export function NodesPage() {
         apiKey: apiKey || undefined,
       });
       setCreateOpen(false);
-      nodeForm.reset({ port: 443 });
+      nodeForm.reset({ port: 8443 });
       notifications.show({
         title: t('common.success'),
         message: t('notification.nodeAdded'),
@@ -580,7 +585,7 @@ export function NodesPage() {
           />
           <TextInput
             label={t('nodes.address')}
-            placeholder="192.168.1.100"
+            placeholder="node-01.example.com"
             value={nodeForm.values.address}
             onChange={(e) =>
               nodeForm.setFieldValue('address', e.currentTarget.value)

@@ -138,11 +138,19 @@ export interface Node {
   name: string;
   address: string;
   port: number;
-  apiKey: string;
   enabled: boolean;
   status: string;
   lastCheck: string | null;
   createdAt: string;
+  agentKeyId: string;
+  agentApiVersion: string | null;
+  agentVersion: string | null;
+  lastRevision: string | null;
+  lastSyncAt: string | null;
+  lastSyncError: string | null;
+  credentialsConfigured: boolean;
+  customCaConfigured: boolean;
+  caFingerprint: string | null;
 }
 
 export interface Webhook {
