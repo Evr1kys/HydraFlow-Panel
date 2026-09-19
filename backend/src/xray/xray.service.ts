@@ -1,18 +1,26 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import { readFile } from 'fs/promises';
+import {
+  BadRequestException,
+  HttpException,
+  Injectable,
+  Logger,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MetricsService } from '../metrics/metrics.service';
-
-const execAsync = promisify(exec);
-
-const XRAY_CONFIG_PATH = '/etc/xray/config.json';
+import { NodesService, SyncResult } from '../nodes/nodes.service';
 
 export interface XrayStatus {
   running: boolean;
   version: string | null;
   uptime: string | null;
+  nodes: Array<{
+    id: string;
+    name: string;
+    status: string;
+    version: string | null;
+    revision: string | null;
+    lastCheck: Date | null;
+  }>;
 }
 
 export interface XrayInbound {
@@ -26,8 +34,11 @@ export interface XrayInbound {
 
 export interface XrayConfig {
   log: { loglevel: string };
+  api: { tag: string; services: string[] };
+  policy: Record<string, unknown>;
   inbounds: XrayInbound[];
   outbounds: Array<{ protocol: string; tag: string }>;
+  routing: Record<string, unknown>;
 }
 
 export interface ConfigValidationError {
@@ -50,49 +61,64 @@ export class XrayService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly metrics: MetricsService,
+    private readonly nodes: NodesService,
   ) {}
 
   async getStatus(): Promise<XrayStatus> {
-    try {
-      const { stdout } = await execAsync('pgrep -x xray');
-      const pid = stdout.trim();
-      let version: string | null = null;
-
-      try {
-        const versionResult = await execAsync('xray version');
-        const match = versionResult.stdout.match(/Xray\s+([\d.]+)/);
-        version = match ? match[1] : null;
-      } catch {
-        version = null;
-      }
-
-      return {
-        running: !!pid,
-        version,
-        uptime: pid ? 'running' : null,
-      };
-    } catch {
-      return { running: false, version: null, uptime: null };
-    }
+    await this.nodes.checkAllHealth();
+    const nodes = await this.nodes.findAll();
+    const enabled = nodes.filter((node) => node.enabled);
+    const healthy = enabled.filter((node) => node.status === 'healthy');
+    return {
+      running: enabled.length > 0 && healthy.length === enabled.length,
+      version: healthy[0]?.agentVersion ?? null,
+      uptime: null,
+      nodes: enabled.map((node) => ({
+        id: node.id,
+        name: node.name,
+        status: node.status,
+        version: node.agentVersion,
+        revision: node.lastRevision,
+        lastCheck: node.lastCheck,
+      })),
+    };
   }
 
-  async restart(): Promise<{ message: string }> {
-    try {
-      await this.generateConfig();
-      try {
-        await execAsync('pkill -x xray');
-      } catch {
-        // Process may not be running
-      }
-      await execAsync(
-        'xray run -config /etc/xray/config.json > /dev/null 2>&1 &',
-      );
-      this.logger.log('Xray restarted successfully');
-      return { message: 'Xray restarted' };
-    } catch (error) {
-      this.logger.error('Failed to restart xray', error);
-      return { message: 'Xray restart attempted (may not be installed)' };
+  async restart(): Promise<{
+    message: string;
+    results: Array<{ nodeId: string; success: boolean; error?: string }>;
+  }> {
+    const enabled = (await this.nodes.findAll()).filter((node) => node.enabled);
+    if (enabled.length === 0) {
+      throw new BadRequestException('No enabled HydraFlow Agent nodes');
     }
+    const results = await Promise.all(
+      enabled.map(async (node) => {
+        try {
+          await this.nodes.restart(node.id);
+          return { nodeId: node.id, success: true };
+        } catch (error) {
+          return {
+            nodeId: node.id,
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          };
+        }
+      }),
+    );
+    const failures = results.filter((result) => !result.success);
+    if (failures.length > 0) {
+      throw new HttpException(
+        {
+          statusCode: 502,
+          code: 'agent_restart_partial_failure',
+          message: 'One or more Agents failed to restart Xray',
+          results,
+        },
+        502,
+      );
+    }
+    return { message: 'Xray restarted on all enabled Agents', results };
   }
 
   async generateConfig(): Promise<XrayConfig> {
@@ -100,20 +126,42 @@ export class XrayService {
     const settings = await this.prisma.settings.findUnique({
       where: { id: 'main' },
     });
+    if (!settings) {
+      throw new UnprocessableEntityException('HydraFlow settings are missing');
+    }
     const users = await this.prisma.user.findMany({
-      where: { enabled: true },
+      where: {
+        enabled: true,
+        OR: [{ expiryDate: null }, { expiryDate: { gt: new Date() } }],
+      },
+      orderBy: { createdAt: 'asc' },
     });
 
-    const inbounds: XrayInbound[] = [];
+    const inbounds: XrayInbound[] = [
+      {
+        listen: '127.0.0.1',
+        port: 10085,
+        protocol: 'dokodemo-door',
+        settings: { address: '127.0.0.1' },
+        tag: 'api',
+      },
+    ];
 
-    if (settings?.realityEnabled) {
+    if (settings.realityEnabled) {
+      if (!settings.realityPvk || !settings.realitySid) {
+        throw new UnprocessableEntityException(
+          'Reality is enabled but private key or short ID is missing',
+        );
+      }
       inbounds.push({
         listen: '0.0.0.0',
         port: settings.realityPort,
         protocol: 'vless',
         settings: {
-          clients: users.map((u) => ({
-            id: u.uuid,
+          clients: users.map((user) => ({
+            id: user.uuid,
+            email: user.email,
+            level: 0,
             flow: 'xtls-rprx-vision',
           })),
           decryption: 'none',
@@ -126,22 +174,24 @@ export class XrayService {
             dest: `${settings.realitySni}:443`,
             xver: 0,
             serverNames: [settings.realitySni],
-            privateKey: settings.realityPvk ?? '',
-            shortIds: [settings.realitySid ?? ''],
+            privateKey: settings.realityPvk,
+            shortIds: [settings.realitySid],
           },
         },
         tag: 'reality-in',
       });
     }
 
-    if (settings?.wsEnabled) {
+    if (settings.wsEnabled) {
       inbounds.push({
         listen: '0.0.0.0',
         port: settings.wsPort,
         protocol: 'vless',
         settings: {
-          clients: users.map((u) => ({
-            id: u.uuid,
+          clients: users.map((user) => ({
+            id: user.uuid,
+            email: user.email,
+            level: 0,
           })),
           decryption: 'none',
         },
@@ -149,23 +199,26 @@ export class XrayService {
           network: 'ws',
           wsSettings: {
             path: settings.wsPath ?? '/ws',
-            headers: settings.wsHost
-              ? { Host: settings.wsHost }
-              : {},
+            headers: settings.wsHost ? { Host: settings.wsHost } : {},
           },
         },
         tag: 'ws-in',
       });
     }
 
-    if (settings?.ssEnabled) {
+    if (settings.ssEnabled) {
+      if (!settings.ssPassword) {
+        throw new UnprocessableEntityException(
+          'Shadowsocks is enabled but its password is missing',
+        );
+      }
       inbounds.push({
         listen: '0.0.0.0',
         port: settings.ssPort,
         protocol: 'shadowsocks',
         settings: {
           method: settings.ssMethod,
-          password: settings.ssPassword ?? '',
+          password: settings.ssPassword,
           network: 'tcp,udp',
         },
         tag: 'ss-in',
@@ -174,55 +227,85 @@ export class XrayService {
 
     const config: XrayConfig = {
       log: { loglevel: 'warning' },
+      api: { tag: 'api', services: ['StatsService'] },
+      policy: {
+        levels: {
+          '0': {
+            statsUserUplink: true,
+            statsUserDownlink: true,
+          },
+        },
+        system: {
+          statsInboundUplink: true,
+          statsInboundDownlink: true,
+          statsOutboundUplink: true,
+          statsOutboundDownlink: true,
+        },
+      },
       inbounds,
       outbounds: [
         { protocol: 'freedom', tag: 'direct' },
         { protocol: 'blackhole', tag: 'blocked' },
+        { protocol: 'freedom', tag: 'api' },
       ],
+      routing: {
+        domainStrategy: 'AsIs',
+        rules: [
+          {
+            type: 'field',
+            inboundTag: ['api'],
+            outboundTag: 'api',
+          },
+        ],
+      },
     };
-
-    try {
-      const { writeFile } = await import('fs/promises');
-      await writeFile(
-        '/etc/xray/config.json',
-        JSON.stringify(config, null, 2),
-      );
-    } catch {
-      this.logger.warn('Could not write xray config (not running as root or xray not installed)');
-    }
 
     const durationSeconds = Number(process.hrtime.bigint() - startTime) / 1e9;
     this.metrics.observeConfigGen(durationSeconds);
-
     return config;
   }
 
   async getConfig(): Promise<{ config: string }> {
-    try {
-      const content = await readFile(XRAY_CONFIG_PATH, 'utf-8');
-      return { config: content };
-    } catch {
-      // If file doesn't exist, generate default and return it
-      const config = await this.generateConfig();
-      return { config: JSON.stringify(config, null, 2) };
-    }
+    const config = await this.generateConfig();
+    return { config: JSON.stringify(config, null, 2) };
   }
 
-  async saveConfig(configJson: string): Promise<{ message: string }> {
+  async saveConfig(
+    configJson: string,
+    initiatedBy?: string,
+  ): Promise<{ message: string; results: SyncResult[] }> {
     const validation = this.validateConfig(configJson);
     if (!validation.valid) {
-      return { message: `Config has errors: ${validation.errors.map((e) => e.message).join('; ')}` };
+      throw new BadRequestException({
+        code: 'invalid_xray_config',
+        message: 'Xray configuration contains structural errors',
+        errors: validation.errors,
+        warnings: validation.warnings,
+      });
     }
-
-    try {
-      const { writeFile } = await import('fs/promises');
-      await writeFile(XRAY_CONFIG_PATH, configJson);
-    } catch {
-      this.logger.warn('Could not write xray config');
-      return { message: 'Failed to write config file' };
+    const results = await this.nodes.pushConfigToAll(configJson, initiatedBy);
+    if (results.length === 0) {
+      throw new BadRequestException('No enabled HydraFlow Agent nodes');
     }
-
-    return this.restart();
+    const failures = results.filter((result) => !result.success);
+    if (failures.length > 0) {
+      this.logger.error(
+        `Xray deployment failed on ${failures.length}/${results.length} nodes`,
+      );
+      throw new HttpException(
+        {
+          statusCode: 502,
+          code: 'xray_deployment_partial_failure',
+          message: 'Configuration failed on one or more Agents',
+          results,
+        },
+        502,
+      );
+    }
+    return {
+      message: 'Configuration validated and applied on all enabled Agents',
+      results,
+    };
   }
 
   async getDefaultConfig(): Promise<{ config: string }> {
@@ -233,39 +316,28 @@ export class XrayService {
   validateConfig(configJson: string): ConfigValidationResult {
     const errors: ConfigValidationError[] = [];
     const warnings: ConfigValidationError[] = [];
-
-    // Step 1: Check JSON syntax
     let parsed: Record<string, unknown>;
     try {
       parsed = JSON.parse(configJson) as Record<string, unknown>;
-    } catch (err) {
-      const message = err instanceof SyntaxError ? err.message : 'Invalid JSON';
-      // Try to extract position from error message
-      const posMatch = message.match(/position\s+(\d+)/i);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new SyntaxError('Config root must be an object');
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Invalid JSON';
+      const position = message.match(/position\s+(\d+)/i)?.[1];
       let line = 1;
       let column = 1;
-      if (posMatch) {
-        const pos = parseInt(posMatch[1], 10);
-        const upToPos = configJson.substring(0, pos);
-        line = (upToPos.match(/\n/g) || []).length + 1;
-        const lastNewline = upToPos.lastIndexOf('\n');
-        column = pos - lastNewline;
+      if (position) {
+        const offset = Number.parseInt(position, 10);
+        const prefix = configJson.substring(0, offset);
+        line = (prefix.match(/\n/g) ?? []).length + 1;
+        column = offset - prefix.lastIndexOf('\n');
       }
       errors.push({ line, column, message, severity: 'error' });
       return { valid: false, errors, warnings };
     }
 
-    // Step 2: Structural validation
-    if (!parsed['log'] && !parsed['inbounds'] && !parsed['outbounds']) {
-      warnings.push({
-        line: 1,
-        column: 1,
-        message: 'Config appears empty - no log, inbounds, or outbounds found',
-        severity: 'warning',
-      });
-    }
-
-    if (parsed['inbounds'] && !Array.isArray(parsed['inbounds'])) {
+    if (parsed['inbounds'] !== undefined && !Array.isArray(parsed['inbounds'])) {
       errors.push({
         line: 1,
         column: 1,
@@ -273,8 +345,7 @@ export class XrayService {
         severity: 'error',
       });
     }
-
-    if (parsed['outbounds'] && !Array.isArray(parsed['outbounds'])) {
+    if (parsed['outbounds'] !== undefined && !Array.isArray(parsed['outbounds'])) {
       errors.push({
         line: 1,
         column: 1,
@@ -283,83 +354,114 @@ export class XrayService {
       });
     }
 
-    // Step 3: Validate inbounds
     if (Array.isArray(parsed['inbounds'])) {
-      const inbounds = parsed['inbounds'] as Array<Record<string, unknown>>;
       const ports = new Set<number>();
       const tags = new Set<string>();
-
-      for (let i = 0; i < inbounds.length; i++) {
-        const inbound = inbounds[i];
-        if (!inbound['protocol']) {
+      for (const [index, value] of parsed['inbounds'].entries()) {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
           errors.push({
             line: 1,
             column: 1,
-            message: `inbounds[${i}]: missing "protocol" field`,
+            message: `inbounds[${index}] must be an object`,
             severity: 'error',
           });
+          continue;
         }
-        if (!inbound['port']) {
+        const inbound = value as Record<string, unknown>;
+        if (typeof inbound['protocol'] !== 'string') {
           errors.push({
             line: 1,
             column: 1,
-            message: `inbounds[${i}]: missing "port" field`,
+            message: `inbounds[${index}]: missing protocol`,
             severity: 'error',
           });
         }
-        if (typeof inbound['port'] === 'number') {
-          if (ports.has(inbound['port'] as number)) {
-            warnings.push({
-              line: 1,
-              column: 1,
-              message: `inbounds[${i}]: duplicate port ${inbound['port']}`,
-              severity: 'warning',
-            });
-          }
-          ports.add(inbound['port'] as number);
-        }
-        if (typeof inbound['tag'] === 'string') {
-          if (tags.has(inbound['tag'] as string)) {
+        if (!Number.isInteger(inbound['port'])) {
+          errors.push({
+            line: 1,
+            column: 1,
+            message: `inbounds[${index}]: port must be an integer`,
+            severity: 'error',
+          });
+        } else {
+          const port = inbound['port'] as number;
+          if (port < 1 || port > 65535) {
             errors.push({
               line: 1,
               column: 1,
-              message: `inbounds[${i}]: duplicate tag "${inbound['tag']}"`,
+              message: `inbounds[${index}]: port is outside 1-65535`,
               severity: 'error',
             });
           }
-          tags.add(inbound['tag'] as string);
+          if (ports.has(port)) {
+            warnings.push({
+              line: 1,
+              column: 1,
+              message: `inbounds[${index}]: duplicate port ${port}`,
+              severity: 'warning',
+            });
+          }
+          ports.add(port);
+        }
+        if (typeof inbound['tag'] === 'string') {
+          const tag = inbound['tag'];
+          if (tags.has(tag)) {
+            errors.push({
+              line: 1,
+              column: 1,
+              message: `inbounds[${index}]: duplicate tag "${tag}"`,
+              severity: 'error',
+            });
+          }
+          tags.add(tag);
         }
       }
     }
 
-    // Step 4: Validate outbounds
     if (Array.isArray(parsed['outbounds'])) {
-      const outbounds = parsed['outbounds'] as Array<Record<string, unknown>>;
-      for (let i = 0; i < outbounds.length; i++) {
-        if (!outbounds[i]['protocol']) {
+      const outbounds = parsed['outbounds'];
+      for (const [index, value] of outbounds.entries()) {
+        if (
+          !value ||
+          typeof value !== 'object' ||
+          Array.isArray(value) ||
+          typeof (value as Record<string, unknown>)['protocol'] !== 'string'
+        ) {
           errors.push({
             line: 1,
             column: 1,
-            message: `outbounds[${i}]: missing "protocol" field`,
+            message: `outbounds[${index}]: missing protocol`,
             severity: 'error',
           });
         }
       }
-      const hasDirect = outbounds.some((o) => o['protocol'] === 'freedom');
-      if (!hasDirect) {
+      if (
+        !outbounds.some(
+          (value) =>
+            value &&
+            typeof value === 'object' &&
+            !Array.isArray(value) &&
+            (value as Record<string, unknown>)['protocol'] === 'freedom',
+        )
+      ) {
         warnings.push({
           line: 1,
           column: 1,
-          message: 'No "freedom" outbound found - traffic may not route correctly',
+          message: 'No freedom outbound found',
           severity: 'warning',
         });
       }
     }
 
-    return {
-      valid: errors.length === 0,
-      errors,
-      warnings,
-    };
+    if (!Array.isArray(parsed['inbounds']) || parsed['inbounds'].length === 0) {
+      warnings.push({
+        line: 1,
+        column: 1,
+        message: 'Configuration has no inbounds',
+        severity: 'warning',
+      });
+    }
+
+    return { valid: errors.length === 0, errors, warnings };
   }
 }
