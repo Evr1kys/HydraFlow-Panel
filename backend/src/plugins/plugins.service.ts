@@ -1,23 +1,15 @@
 import {
-  HttpException,
-  HttpStatus,
   Injectable,
-  Logger,
   NotFoundException,
+  NotImplementedException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { NodesService } from '../nodes/nodes.service';
 import { CreatePluginDto } from './dto/create-plugin.dto';
 import { UpdatePluginDto } from './dto/update-plugin.dto';
 
 @Injectable()
 export class PluginsService {
-  private readonly logger = new Logger(PluginsService.name);
-
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly nodesService: NodesService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async findByNode(nodeId: string) {
     return this.prisma.nodePlugin.findMany({
@@ -70,7 +62,6 @@ export class PluginsService {
   private async loadPluginWithNode(nodeId: string, pluginId: string) {
     const plugin = await this.prisma.nodePlugin.findFirst({
       where: { id: pluginId, nodeId },
-      include: { node: true },
     });
     if (!plugin) throw new NotFoundException('Plugin not found for this node');
     return plugin;
@@ -79,7 +70,6 @@ export class PluginsService {
   private async loadPluginById(pluginId: string) {
     const plugin = await this.prisma.nodePlugin.findUnique({
       where: { id: pluginId },
-      include: { node: true },
     });
     if (!plugin) throw new NotFoundException('Plugin not found');
     return plugin;
@@ -100,100 +90,29 @@ export class PluginsService {
     return this.status(plugin.nodeId, plugin.id);
   }
 
-  private parsePluginConfig(raw: string): Record<string, unknown> {
-    try {
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        return parsed as Record<string, unknown>;
-      }
-      return { value: parsed };
-    } catch {
-      return {};
-    }
+  async execute(nodeId: string, pluginId: string): Promise<never> {
+    const plugin = await this.loadPluginWithNode(nodeId, pluginId);
+    return this.unsupported(plugin.type);
   }
 
-  async execute(nodeId: string, pluginId: string) {
+  async restart(nodeId: string, pluginId: string): Promise<never> {
     const plugin = await this.loadPluginWithNode(nodeId, pluginId);
-    const config = this.parsePluginConfig(plugin.config);
-
-    try {
-      const result = await this.nodesService.nodeRequest(plugin.node, {
-        method: 'POST',
-        path: '/api/plugins/execute',
-        body: { type: plugin.type, config },
-        timeoutMs: 30_000,
-      });
-      return {
-        pluginId: plugin.id,
-        nodeId: plugin.nodeId,
-        type: plugin.type,
-        executedAt: new Date().toISOString(),
-        result,
-      };
-    } catch (err) {
-      if (err instanceof HttpException) throw err;
-      const message = err instanceof Error ? err.message : String(err);
-      this.logger.error(
-        `Plugin ${plugin.type} execute failed on node ${plugin.node.name}: ${message}`,
-      );
-      throw new HttpException(
-        `Plugin execution failed: ${message}`,
-        HttpStatus.BAD_GATEWAY,
-      );
-    }
+    return this.unsupported(plugin.type);
   }
 
-  async restart(nodeId: string, pluginId: string) {
+  async status(nodeId: string, pluginId: string): Promise<never> {
     const plugin = await this.loadPluginWithNode(nodeId, pluginId);
-    const config = this.parsePluginConfig(plugin.config);
-
-    try {
-      const result = await this.nodesService.nodeRequest(plugin.node, {
-        method: 'POST',
-        path: '/api/plugins/restart',
-        body: { type: plugin.type, config },
-        timeoutMs: 30_000,
-      });
-      return {
-        pluginId: plugin.id,
-        nodeId: plugin.nodeId,
-        type: plugin.type,
-        restartedAt: new Date().toISOString(),
-        result,
-      };
-    } catch (err) {
-      if (err instanceof HttpException) throw err;
-      const message = err instanceof Error ? err.message : String(err);
-      throw new HttpException(
-        `Plugin restart failed: ${message}`,
-        HttpStatus.BAD_GATEWAY,
-      );
-    }
+    return this.unsupported(plugin.type);
   }
 
-  async status(nodeId: string, pluginId: string) {
-    const plugin = await this.loadPluginWithNode(nodeId, pluginId);
-
-    try {
-      const result = await this.nodesService.nodeRequest(plugin.node, {
-        method: 'GET',
-        path: `/api/plugins/status?type=${encodeURIComponent(plugin.type)}`,
-        timeoutMs: 30_000,
-      });
-      return {
-        pluginId: plugin.id,
-        nodeId: plugin.nodeId,
-        type: plugin.type,
-        checkedAt: new Date().toISOString(),
-        status: result,
-      };
-    } catch (err) {
-      if (err instanceof HttpException) throw err;
-      const message = err instanceof Error ? err.message : String(err);
-      throw new HttpException(
-        `Plugin status check failed: ${message}`,
-        HttpStatus.BAD_GATEWAY,
-      );
-    }
+  private unsupported(type: string): never {
+    throw new NotImplementedException({
+      code: 'agent_plugin_api_unavailable',
+      message:
+        'Remote plugin execution is disabled because the signed Agent API does not expose an allowlisted plugin contract yet.',
+      pluginType: type,
+      migration:
+        'Plugin metadata remains stored. Execution can be re-enabled only through a versioned, allowlisted Agent API implementation.',
+    });
   }
 }
