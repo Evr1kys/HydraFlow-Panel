@@ -1,37 +1,36 @@
 name: Finalize Agent Registration Form
 
 on:
-  push:
-    branches: [feat/agent-client-v1]
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
 
 permissions:
   contents: write
 
 jobs:
   update:
-    if: ${{ !contains(github.event.head_commit.message, '[agent-form-final]') }}
+    if: ${{ github.head_ref == 'feat/agent-client-v1' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
           ref: feat/agent-client-v1
+      - name: Skip generated commit
+        id: guard
+        run: |
+          if git log -1 --pretty=%B | grep -Fq '[agent-form-final]'; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Patch registration form
+        if: steps.guard.outputs.skip != 'true'
         run: |
           python3 - <<'PY'
           from pathlib import Path
           p = Path('frontend/src/pages/Nodes.tsx')
           s = p.read_text()
-          old = '''      port: validators.combine(
-                validators.isNotEmpty(t('validation.required')),
-                validators.isPort(t('validation.port')),
-              ),
-            },'''
-          if old not in s:
-              old = '''      port: validators.combine(
-                validators.isNotEmpty(t('validation.required')),
-                validators.isPort(t('validation.port')),
-              ),
-            },'''.replace('      ', '      ')
           s = s.replace(
               '''      port: validators.combine(
                 validators.isNotEmpty(t('validation.required')),
@@ -119,14 +118,13 @@ jobs:
                 styles={inputStyles}
               />''',
           )
+          if s == p.read_text():
+              raise SystemExit('expected Agent form patterns were not found')
           p.write_text(s)
           PY
       - name: Commit form update
+        if: steps.guard.outputs.skip != 'true'
         run: |
-          if git diff --quiet; then
-            echo "No form diff generated" >&2
-            exit 1
-          fi
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add frontend/src/pages/Nodes.tsx
