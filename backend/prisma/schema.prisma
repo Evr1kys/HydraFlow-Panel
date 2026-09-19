@@ -146,20 +146,49 @@ model Alert {
 }
 
 model Node {
-  id             String          @id @default(uuid())
-  name           String
-  address        String
-  port           Int
-  apiKey         String          @default("")
-  enabled        Boolean         @default(true)
-  status         String          @default("unknown")
-  lastCheck      DateTime?
-  createdAt      DateTime        @default(now())
-  billingNodes   BillingNode[]
-  plugins        NodePlugin[]
-  activeSessions ActiveSession[]
-  metadata       NodeMeta[]
-  hostLinks      HostsToNodes[]
+  id                String           @id @default(uuid())
+  name              String
+  address           String
+  port              Int
+  apiKey            String           @default("") // deprecated plaintext migration source
+  agentKeyId        String           @default("")
+  agentSecretEnc    String           @default("")
+  agentCaCert       String?
+  agentServerName   String?
+  agentApiVersion   String?
+  agentVersion      String?
+  enabled           Boolean          @default(true)
+  status            String           @default("unknown")
+  lastCheck         DateTime?
+  lastRevision      String?
+  lastSyncAt        DateTime?
+  lastSyncError     String?
+  createdAt         DateTime         @default(now())
+  billingNodes      BillingNode[]
+  plugins           NodePlugin[]
+  activeSessions    ActiveSession[]
+  metadata          NodeMeta[]
+  hostLinks         HostsToNodes[]
+  deployments       NodeDeployment[]
+
+  @@index([enabled, status])
+}
+
+model NodeDeployment {
+  id             String    @id @default(uuid())
+  nodeId         String
+  node           Node      @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  idempotencyKey String    @unique
+  configHash     String
+  revision       String?
+  status         String    @default("pending")
+  error          String?
+  initiatedBy    String?
+  createdAt      DateTime  @default(now())
+  finishedAt     DateTime?
+
+  @@index([nodeId, createdAt])
+  @@index([status, createdAt])
 }
 
 model Host {
