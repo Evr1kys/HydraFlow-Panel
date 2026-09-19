@@ -43,10 +43,6 @@ jobs:
             nanoid@3 \
             nodemailer@10.0.10 \
             uuid@11
-          npm install --save-dev --save-exact \
-            @nestjs/cli@12 \
-            @nestjs/schematics@12 \
-            @types/node@22
       - name: Commit generated manifests and lockfile
         run: |
           git config user.name 'github-actions[bot]'
