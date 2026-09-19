@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ActionIcon,
   Badge,
-  Box,
   Button,
   Code,
   Group,
@@ -23,7 +22,6 @@ import {
 import { useDebouncedValue } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import {
-  IconAlertTriangle,
   IconHistory,
   IconKey,
   IconPlus,
@@ -51,29 +49,6 @@ import { usePaginated } from '../hooks/usePaginated';
 import { usePermissions } from '../hooks/usePermissions';
 import type { Node } from '../types';
 
-const cardStyle = {
-  backgroundColor: '#1E2128',
-  border: '1px solid rgba(255,255,255,0.06)',
-  borderRadius: 12,
-  boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-};
-
-const inputStyles = {
-  input: {
-    backgroundColor: '#161B23',
-    border: '1px solid rgba(255,255,255,0.08)',
-    color: '#C1C2C5',
-    borderRadius: 8,
-  },
-  label: {
-    color: '#909296',
-    fontSize: '12px',
-    fontWeight: 600,
-    marginBottom: 4,
-  },
-  description: { color: '#5c5f66' },
-};
-
 const initialForm: CreateNodeInput = {
   name: '',
   address: '',
@@ -85,24 +60,16 @@ const initialForm: CreateNodeInput = {
   enabled: true,
 };
 
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return String(error);
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function statusColor(status: string): string {
-  switch (status) {
-    case 'healthy':
-      return 'teal';
-    case 'degraded':
-      return 'yellow';
-    case 'offline':
-      return 'orange';
-    case 'error':
-      return 'red';
-    default:
-      return 'gray';
-  }
+  if (status === 'healthy') return 'teal';
+  if (status === 'degraded') return 'yellow';
+  if (status === 'offline') return 'orange';
+  if (status === 'error') return 'red';
+  return 'gray';
 }
 
 function formatDate(value: string | null): string {
@@ -112,17 +79,16 @@ function formatDate(value: string | null): string {
 export function NodesPage() {
   const { t } = useTranslation();
   const permissions = usePermissions();
+  const [query, setQuery] = useState('');
+  const [debouncedQuery] = useDebouncedValue(query, 300);
+  const [status, setStatus] = useState<string | null>('all');
   const [createOpen, setCreateOpen] = useState(false);
-  const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<CreateNodeInput>(initialForm);
-  const [searchInput, setSearchInput] = useState('');
-  const [debouncedSearch] = useDebouncedValue(searchInput, 300);
-  const [statusFilter, setStatusFilter] = useState<string | null>('all');
-  const [busyAction, setBusyAction] = useState<string | null>(null);
-  const [deploymentsOpen, setDeploymentsOpen] = useState(false);
-  const [deploymentNode, setDeploymentNode] = useState<Node | null>(null);
-  const [deployments, setDeployments] = useState<NodeDeployment[]>([]);
-  const [deploymentsLoading, setDeploymentsLoading] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [historyNode, setHistoryNode] = useState<Node | null>(null);
+  const [history, setHistory] = useState<NodeDeployment[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const paginated = usePaginated<Node>(getNodesPaginated, {
     size: 25,
@@ -131,51 +97,73 @@ export function NodesPage() {
   });
 
   useEffect(() => {
-    paginated.setSearch(debouncedSearch);
-  }, [debouncedSearch, paginated.setSearch]);
+    paginated.setSearch(debouncedQuery);
+  }, [debouncedQuery, paginated.setSearch]);
 
   useEffect(() => {
     paginated.setFilter(
       'status',
-      statusFilter && statusFilter !== 'all' ? statusFilter : undefined,
+      status && status !== 'all' ? status : undefined,
     );
-  }, [statusFilter, paginated.setFilter]);
+  }, [status, paginated.setFilter]);
 
-  const totalPages = useMemo(
+  const pages = useMemo(
     () => Math.max(1, Math.ceil(paginated.total / paginated.size)),
-    [paginated.total, paginated.size],
+    [paginated.size, paginated.total],
   );
-  const currentPage = Math.floor(paginated.start / paginated.size) + 1;
+  const page = Math.floor(paginated.start / paginated.size) + 1;
 
-  const notifyError = (title: string, error: unknown) => {
-    notifications.show({
-      title,
-      message: errorMessage(error),
-      color: 'red',
-    });
+  const showError = (title: string, error: unknown) => {
+    notifications.show({ title, message: messageOf(error), color: 'red' });
   };
 
-  const validateCreate = (): string | null => {
-    if (!form.name.trim()) return 'Node name is required';
-    if (!form.address.trim()) return 'Agent address is required';
-    if (!Number.isInteger(form.port) || form.port < 1 || form.port > 65535) {
-      return 'Agent port must be between 1 and 65535';
+  const run = async (
+    key: string,
+    operation: () => Promise<unknown>,
+    success: string,
+  ) => {
+    setBusy(key);
+    try {
+      await operation();
+      notifications.show({
+        title: t('common.success'),
+        message: success,
+        color: 'teal',
+      });
+      await paginated.refetch();
+    } catch (error) {
+      showError('Agent operation failed', error);
+    } finally {
+      setBusy(null);
     }
-    if (!/^[A-Za-z0-9._-]{3,64}$/.test(form.keyId)) {
-      return 'Agent key ID is invalid';
-    }
-    if (form.apiKey.trim().length < 40) {
-      return 'Agent registration secret is missing or too short';
-    }
-    return null;
   };
 
-  const handleCreate = async () => {
-    const validation = validateCreate();
-    if (validation) {
-      notifications.show({ title: 'Invalid Agent registration', message: validation, color: 'red' });
+  const register = async () => {
+    if (!form.name.trim() || !form.address.trim()) {
+      notifications.show({
+        title: 'Invalid registration',
+        message: 'Name and Agent address are required',
+        color: 'red',
+      });
       return;
     }
+    if (!/^[A-Za-z0-9._-]{3,64}$/.test(form.keyId)) {
+      notifications.show({
+        title: 'Invalid registration',
+        message: 'Agent key ID is invalid',
+        color: 'red',
+      });
+      return;
+    }
+    if (form.apiKey.trim().length < 40) {
+      notifications.show({
+        title: 'Invalid registration',
+        message: 'Agent registration secret is missing or too short',
+        color: 'red',
+      });
+      return;
+    }
+
     setCreating(true);
     try {
       await createNode({
@@ -196,76 +184,44 @@ export function NodesPage() {
       });
       await paginated.refetch();
     } catch (error) {
-      notifyError('Agent registration failed', error);
+      showError('Agent registration failed', error);
     } finally {
       setCreating(false);
     }
   };
 
-  const runNodeAction = async (
-    key: string,
-    action: () => Promise<unknown>,
-    successMessage: string,
-  ) => {
-    setBusyAction(key);
-    try {
-      await action();
-      notifications.show({
-        title: t('common.success'),
-        message: successMessage,
-        color: 'teal',
-      });
-      await paginated.refetch();
-    } catch (error) {
-      notifyError('Agent operation failed', error);
-    } finally {
-      setBusyAction(null);
-    }
-  };
-
-  const handleDelete = async (node: Node) => {
+  const remove = async (node: Node) => {
     if (!window.confirm(`Delete Agent node “${node.name}”?`)) return;
-    await runNodeAction(
-      `delete:${node.id}`,
-      () => deleteNode(node.id),
-      'Node deleted',
-    );
+    await run(`delete:${node.id}`, () => deleteNode(node.id), 'Node deleted');
   };
 
-  const openDeployments = async (node: Node) => {
-    setDeploymentNode(node);
-    setDeploymentsOpen(true);
-    setDeploymentsLoading(true);
+  const openHistory = async (node: Node) => {
+    setHistoryNode(node);
+    setHistoryLoading(true);
     try {
-      setDeployments(await getNodeDeployments(node.id));
+      setHistory(await getNodeDeployments(node.id));
     } catch (error) {
-      notifyError('Could not load deployment history', error);
-      setDeployments([]);
+      setHistory([]);
+      showError('Could not load deployment history', error);
     } finally {
-      setDeploymentsLoading(false);
+      setHistoryLoading(false);
     }
   };
 
-  const handleRollback = async (deployment: NodeDeployment) => {
-    if (!deploymentNode || !deployment.revision) return;
-    if (
-      !window.confirm(
-        `Roll back ${deploymentNode.name} to revision ${deployment.revision}?`,
-      )
-    ) {
-      return;
-    }
-    await runNodeAction(
+  const rollback = async (deployment: NodeDeployment) => {
+    if (!historyNode || !deployment.revision) return;
+    if (!window.confirm(`Roll back to ${deployment.revision}?`)) return;
+    await run(
       `rollback:${deployment.id}`,
       () =>
         rollbackNode(
-          deploymentNode.id,
+          historyNode.id,
           deployment.revision as string,
           `Panel rollback from deployment ${deployment.id}`,
         ),
       `Rolled back to ${deployment.revision}`,
     );
-    setDeployments(await getNodeDeployments(deploymentNode.id));
+    setHistory(await getNodeDeployments(historyNode.id));
   };
 
   if (paginated.loading && paginated.items.length === 0) {
@@ -273,43 +229,25 @@ export function NodesPage() {
   }
 
   if (paginated.error) {
-    return (
-      <EmptyState
-        icon={IconAlertTriangle}
-        title={t('common.error')}
-        message={paginated.error}
-      />
-    );
+    return <EmptyState icon={IconServer} message={paginated.error} />;
   }
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between" align="center">
+      <Group justify="space-between">
         <Group gap="sm">
-          <Box
-            style={{
-              width: 38,
-              height: 38,
-              borderRadius: '50%',
-              backgroundColor: 'rgba(32,201,151,0.1)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <IconServer size={21} color="#20C997" />
-          </Box>
-          <Text size="22px" fw={700} c="#C1C2C5">
+          <IconServer size={24} color="#20C997" />
+          <Text size="xl" fw={700}>
             {t('nodes.title')}
           </Text>
-          <Badge variant="light" color="teal" size="lg">
+          <Badge color="teal" variant="light">
             {paginated.total}
           </Badge>
         </Group>
         {permissions.canManageNodes && (
           <Button
-            leftSection={<IconPlus size={16} />}
             color="teal"
+            leftSection={<IconPlus size={16} />}
             onClick={() => setCreateOpen(true)}
           >
             Register Agent
@@ -317,19 +255,19 @@ export function NodesPage() {
         )}
       </Group>
 
-      <Group align="end" wrap="wrap">
+      <Group align="end">
         <TextInput
           label="Search"
           placeholder="Name or address"
-          value={searchInput}
-          onChange={(event) => setSearchInput(event.currentTarget.value)}
-          styles={inputStyles}
-          style={{ flex: 1, minWidth: 250 }}
+          value={query}
+          onChange={(event) => setQuery(event.currentTarget.value)}
+          style={{ flex: 1, minWidth: 240 }}
         />
         <Select
           label="Status"
-          value={statusFilter}
-          onChange={setStatusFilter}
+          value={status}
+          onChange={setStatus}
+          w={170}
           data={[
             { value: 'all', label: 'All' },
             { value: 'healthy', label: 'Healthy' },
@@ -338,22 +276,19 @@ export function NodesPage() {
             { value: 'error', label: 'Error' },
             { value: 'unknown', label: 'Unknown' },
           ]}
-          styles={inputStyles}
-          w={170}
         />
         <Select
           label="Rows"
           value={String(paginated.size)}
           onChange={(value) => paginated.setSize(Number(value ?? 25))}
           data={['10', '25', '50', '100']}
-          styles={inputStyles}
           w={100}
         />
       </Group>
 
-      <Paper style={{ ...cardStyle, overflow: 'hidden' }}>
+      <Paper withBorder radius="md" style={{ overflow: 'hidden' }}>
         <ScrollArea>
-          <Table horizontalSpacing="md" verticalSpacing="sm" miw={1050}>
+          <Table horizontalSpacing="md" verticalSpacing="sm" miw={1000}>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>Name</Table.Th>
@@ -369,11 +304,9 @@ export function NodesPage() {
               {paginated.items.map((node) => (
                 <Table.Tr key={node.id}>
                   <Table.Td>
-                    <Text fw={600} c="#C1C2C5">
-                      {node.name}
-                    </Text>
+                    <Text fw={600}>{node.name}</Text>
                     {node.lastSyncError && (
-                      <Tooltip label={node.lastSyncError} multiline maw={420}>
+                      <Tooltip label={node.lastSyncError} multiline maw={400}>
                         <Text size="xs" c="red" lineClamp={1} maw={190}>
                           {node.lastSyncError}
                         </Text>
@@ -384,28 +317,18 @@ export function NodesPage() {
                     <Code>{node.address}:{node.port}</Code>
                   </Table.Td>
                   <Table.Td>
-                    <Badge color={statusColor(node.status)} variant="light">
-                      {node.status}
-                    </Badge>
-                  </Table.Td>
-                  <Table.Td>
-                    <Stack gap={2}>
-                      <Text size="xs" c="dimmed">
-                        API {node.agentApiVersion ?? 'unknown'} · Agent{' '}
-                        {node.agentVersion ?? 'unknown'}
-                      </Text>
-                      <Tooltip label={node.lastRevision ?? 'No active revision'}>
-                        <Code>{node.lastRevision?.slice(0, 22) ?? 'no revision'}</Code>
-                      </Tooltip>
-                    </Stack>
+                    <Badge color={statusColor(node.status)}>{node.status}</Badge>
                   </Table.Td>
                   <Table.Td>
                     <Text size="xs" c="dimmed">
-                      Check: {formatDate(node.lastCheck)}
+                      API {node.agentApiVersion ?? 'unknown'} · Agent{' '}
+                      {node.agentVersion ?? 'unknown'}
                     </Text>
-                    <Text size="xs" c="dimmed">
-                      Sync: {formatDate(node.lastSyncAt)}
-                    </Text>
+                    <Code>{node.lastRevision?.slice(0, 22) ?? 'no revision'}</Code>
+                  </Table.Td>
+                  <Table.Td>
+                    <Text size="xs">Check: {formatDate(node.lastCheck)}</Text>
+                    <Text size="xs">Sync: {formatDate(node.lastSyncAt)}</Text>
                   </Table.Td>
                   <Table.Td>
                     <Stack gap={3}>
@@ -428,11 +351,11 @@ export function NodesPage() {
                       {permissions.canEdit && (
                         <Tooltip label="Health check">
                           <ActionIcon
-                            variant="subtle"
                             color="teal"
-                            loading={busyAction === `check:${node.id}`}
+                            variant="subtle"
+                            disabled={busy === `check:${node.id}`}
                             onClick={() =>
-                              void runNodeAction(
+                              void run(
                                 `check:${node.id}`,
                                 () => checkNodeHealth(node.id),
                                 'Agent health refreshed',
@@ -445,9 +368,9 @@ export function NodesPage() {
                       )}
                       <Tooltip label="Deployment history">
                         <ActionIcon
-                          variant="subtle"
                           color="blue"
-                          onClick={() => void openDeployments(node)}
+                          variant="subtle"
+                          onClick={() => void openHistory(node)}
                         >
                           <IconHistory size={16} />
                         </ActionIcon>
@@ -455,11 +378,11 @@ export function NodesPage() {
                       {permissions.canManageNodes && (
                         <Tooltip label="Restart Xray">
                           <ActionIcon
-                            variant="subtle"
                             color="orange"
-                            loading={busyAction === `restart:${node.id}`}
+                            variant="subtle"
+                            disabled={busy === `restart:${node.id}`}
                             onClick={() =>
-                              void runNodeAction(
+                              void run(
                                 `restart:${node.id}`,
                                 () => restartNode(node.id),
                                 'Xray restarted through Agent',
@@ -473,11 +396,11 @@ export function NodesPage() {
                       {permissions.role === 'superadmin' && (
                         <Tooltip label="Rotate Agent key">
                           <ActionIcon
-                            variant="subtle"
                             color="violet"
-                            loading={busyAction === `rotate:${node.id}`}
+                            variant="subtle"
+                            disabled={busy === `rotate:${node.id}`}
                             onClick={() =>
-                              void runNodeAction(
+                              void run(
                                 `rotate:${node.id}`,
                                 () => rotateNodeKey(node.id),
                                 'Agent credential rotated',
@@ -491,10 +414,10 @@ export function NodesPage() {
                       {permissions.canDelete && (
                         <Tooltip label="Delete node">
                           <ActionIcon
-                            variant="subtle"
                             color="red"
-                            loading={busyAction === `delete:${node.id}`}
-                            onClick={() => void handleDelete(node)}
+                            variant="subtle"
+                            disabled={busy === `delete:${node.id}`}
+                            onClick={() => void remove(node)}
                           >
                             <IconTrash size={16} />
                           </ActionIcon>
@@ -504,37 +427,22 @@ export function NodesPage() {
                   </Table.Td>
                 </Table.Tr>
               ))}
-              {paginated.items.length === 0 && (
-                <Table.Tr>
-                  <Table.Td colSpan={7}>
-                    <EmptyState
-                      icon={IconServer}
-                      message="No HydraFlow Agents match the current filter"
-                      minHeight={220}
-                    />
-                  </Table.Td>
-                </Table.Tr>
-              )}
             </Table.Tbody>
           </Table>
         </ScrollArea>
+        {paginated.items.length === 0 && (
+          <EmptyState
+            icon={IconServer}
+            message="No HydraFlow Agents match the current filter"
+          />
+        )}
       </Paper>
 
       <Group justify="space-between">
         <Text size="sm" c="dimmed">
-          {paginated.total === 0
-            ? '0 nodes'
-            : `${paginated.start + 1}–${Math.min(
-                paginated.start + paginated.size,
-                paginated.total,
-              )} of ${paginated.total}`}
+          {paginated.total} node{paginated.total === 1 ? '' : 's'}
         </Text>
-        <Pagination
-          value={currentPage}
-          total={totalPages}
-          onChange={paginated.setPage}
-          color="teal"
-        />
+        <Pagination value={page} total={pages} onChange={paginated.setPage} />
       </Group>
 
       <Modal
@@ -542,13 +450,11 @@ export function NodesPage() {
         onClose={() => !creating && setCreateOpen(false)}
         title="Register HydraFlow Agent"
         size="lg"
-        centered
       >
         <Stack>
           <Text size="sm" c="dimmed">
-            Run <Code>hydraflow-agent init --hosts ...</Code> on the node and
-            enter the one-time registration material. Panel verifies TLS,
-            API compatibility and Xray health before saving it.
+            Use the one-time output of <Code>hydraflow-agent init</Code>. Panel
+            verifies TLS, API compatibility and Xray health before saving.
           </Text>
           <TextInput
             label="Name"
@@ -556,42 +462,38 @@ export function NodesPage() {
             onChange={(event) =>
               setForm((current) => ({ ...current, name: event.currentTarget.value }))
             }
-            styles={inputStyles}
             required
           />
-          <Group grow align="end">
+          <Group grow>
             <TextInput
               label="Agent DNS name or public IP"
               value={form.address}
               onChange={(event) =>
                 setForm((current) => ({ ...current, address: event.currentTarget.value }))
               }
-              styles={inputStyles}
               required
             />
             <NumberInput
               label="HTTPS port"
               value={form.port}
+              min={1}
+              max={65535}
               onChange={(value) =>
                 setForm((current) => ({
                   ...current,
                   port: typeof value === 'number' ? value : 8443,
                 }))
               }
-              min={1}
-              max={65535}
-              styles={inputStyles}
               required
             />
           </Group>
           <TextInput
             label="Agent key ID"
-            placeholder="agent-0123456789abcdef"
             value={form.keyId}
+            placeholder="agent-0123456789abcdef"
             onChange={(event) =>
               setForm((current) => ({ ...current, keyId: event.currentTarget.value }))
             }
-            styles={inputStyles}
             required
           />
           <PasswordInput
@@ -601,43 +503,38 @@ export function NodesPage() {
             onChange={(event) =>
               setForm((current) => ({ ...current, apiKey: event.currentTarget.value }))
             }
-            styles={inputStyles}
             required
           />
           <Textarea
             label="Agent CA certificate"
-            description="PEM CA generated by Agent init; optional for a publicly trusted certificate"
-            placeholder="-----BEGIN CERTIFICATE-----"
+            description="Optional only when the Agent certificate chains to the system trust store"
+            value={form.caCertificate}
             autosize
             minRows={4}
             maxRows={8}
-            value={form.caCertificate}
             onChange={(event) =>
               setForm((current) => ({
                 ...current,
                 caCertificate: event.currentTarget.value,
               }))
             }
-            styles={inputStyles}
           />
           <TextInput
             label="TLS server name"
-            description="Optional explicit certificate name"
-            placeholder="node-01.example.com"
             value={form.serverName}
+            placeholder="node-01.example.com"
             onChange={(event) =>
               setForm((current) => ({
                 ...current,
                 serverName: event.currentTarget.value,
               }))
             }
-            styles={inputStyles}
           />
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setCreateOpen(false)}>
               {t('common.cancel')}
             </Button>
-            <Button color="teal" loading={creating} onClick={() => void handleCreate()}>
+            <Button color="teal" loading={creating} onClick={() => void register()}>
               Verify and register
             </Button>
           </Group>
@@ -645,31 +542,32 @@ export function NodesPage() {
       </Modal>
 
       <Modal
-        opened={deploymentsOpen}
-        onClose={() => setDeploymentsOpen(false)}
-        title={`Deployment history${deploymentNode ? ` — ${deploymentNode.name}` : ''}`}
+        opened={historyNode !== null}
+        onClose={() => setHistoryNode(null)}
+        title={`Deployment history${historyNode ? ` — ${historyNode.name}` : ''}`}
         size="xl"
-        centered
       >
-        {deploymentsLoading ? (
-          <LoadingSkeleton variant="list" rows={4} />
-        ) : deployments.length === 0 ? (
-          <Text c="dimmed">No configuration deployments recorded.</Text>
+        {historyLoading ? (
+          <LoadingSkeleton variant="cards" rows={3} />
+        ) : history.length === 0 ? (
+          <Text c="dimmed">No deployments recorded.</Text>
         ) : (
           <ScrollArea h={460}>
-            <Stack gap="sm">
-              {deployments.map((deployment) => (
-                <Paper key={deployment.id} p="sm" withBorder bg="#161B23">
+            <Stack>
+              {history.map((deployment) => (
+                <Paper key={deployment.id} withBorder p="sm">
                   <Group justify="space-between" align="flex-start" wrap="nowrap">
                     <Stack gap={3} style={{ minWidth: 0 }}>
                       <Group gap="xs">
-                        <Badge color={statusColor(
-                          deployment.status === 'succeeded'
-                            ? 'healthy'
-                            : deployment.status === 'failed'
-                              ? 'error'
-                              : 'degraded',
-                        )}>
+                        <Badge
+                          color={
+                            deployment.status === 'succeeded'
+                              ? 'teal'
+                              : deployment.status === 'failed'
+                                ? 'red'
+                                : 'yellow'
+                          }
+                        >
                           {deployment.status}
                         </Badge>
                         <Text size="xs" c="dimmed">
@@ -689,11 +587,11 @@ export function NodesPage() {
                     {permissions.canManageNodes && deployment.revision && (
                       <Button
                         size="xs"
-                        variant="light"
                         color="orange"
+                        variant="light"
                         leftSection={<IconRestore size={14} />}
-                        loading={busyAction === `rollback:${deployment.id}`}
-                        onClick={() => void handleRollback(deployment)}
+                        disabled={busy === `rollback:${deployment.id}`}
+                        onClick={() => void rollback(deployment)}
                       >
                         Roll back
                       </Button>
