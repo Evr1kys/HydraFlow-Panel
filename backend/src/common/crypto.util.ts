@@ -10,9 +10,11 @@ const GCM_ALGORITHM = 'aes-256-gcm';
 const LEGACY_ALGORITHM = 'aes-256-cbc';
 const IV_BYTES = 12;
 
-function sourceKey(): string {
+function sourceKey(explicitKey?: string): string {
   const source =
-    process.env.CREDENTIALS_ENCRYPTION_KEY ?? process.env.ENCRYPTION_KEY;
+    explicitKey ??
+    process.env.CREDENTIALS_ENCRYPTION_KEY ??
+    process.env.ENCRYPTION_KEY;
   if (!source || source.length < 32) {
     throw new Error(
       'CREDENTIALS_ENCRYPTION_KEY must contain at least 32 characters',
@@ -21,15 +23,17 @@ function sourceKey(): string {
   return source;
 }
 
-function key(): Buffer {
-  return createHash('sha256').update(sourceKey(), 'utf8').digest();
+function key(explicitKey?: string): Buffer {
+  return createHash('sha256')
+    .update(sourceKey(explicitKey), 'utf8')
+    .digest();
 }
 
 /** Encrypt a secret using versioned AES-256-GCM authenticated encryption. */
-export function encrypt(plaintext: string): string {
+export function encrypt(plaintext: string, explicitKey?: string): string {
   if (!plaintext) return '';
   const iv = randomBytes(IV_BYTES);
-  const cipher = createCipheriv(GCM_ALGORITHM, key(), iv);
+  const cipher = createCipheriv(GCM_ALGORITHM, key(explicitKey), iv);
   const encrypted = Buffer.concat([
     cipher.update(plaintext, 'utf8'),
     cipher.final(),
@@ -47,7 +51,7 @@ export function encrypt(plaintext: string): string {
  * Decrypt a current AES-GCM value or a legacy iv:ciphertext AES-CBC value.
  * Legacy support permits a controlled migration without exposing plaintext.
  */
-export function decrypt(ciphertext: string): string {
+export function decrypt(ciphertext: string, explicitKey?: string): string {
   if (!ciphertext) return '';
   if (ciphertext.startsWith(`${VERSION}:`)) {
     const parts = ciphertext.split(':');
@@ -57,7 +61,7 @@ export function decrypt(ciphertext: string): string {
     const [, ivEncoded, tagEncoded, dataEncoded] = parts;
     const decipher = createDecipheriv(
       GCM_ALGORITHM,
-      key(),
+      key(explicitKey),
       Buffer.from(ivEncoded, 'base64url'),
     );
     decipher.setAuthTag(Buffer.from(tagEncoded, 'base64url'));
@@ -73,7 +77,7 @@ export function decrypt(ciphertext: string): string {
   }
   const decipher = createDecipheriv(
     LEGACY_ALGORITHM,
-    key(),
+    key(explicitKey),
     Buffer.from(ivHex, 'hex'),
   );
   return Buffer.concat([
