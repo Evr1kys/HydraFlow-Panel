@@ -1,0 +1,134 @@
+name: Finalize Agent Registration Form
+
+on:
+  push:
+    branches: [feat/agent-client-v1]
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    if: ${{ !contains(github.event.head_commit.message, '[agent-form-final]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/agent-client-v1
+      - name: Patch registration form
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('frontend/src/pages/Nodes.tsx')
+          s = p.read_text()
+          old = '''      port: validators.combine(
+                validators.isNotEmpty(t('validation.required')),
+                validators.isPort(t('validation.port')),
+              ),
+            },'''
+          if old not in s:
+              old = '''      port: validators.combine(
+                validators.isNotEmpty(t('validation.required')),
+                validators.isPort(t('validation.port')),
+              ),
+            },'''.replace('      ', '      ')
+          s = s.replace(
+              '''      port: validators.combine(
+                validators.isNotEmpty(t('validation.required')),
+                validators.isPort(t('validation.port')),
+              ),
+            },''',
+              '''      port: validators.combine(
+                validators.isNotEmpty(t('validation.required')),
+                validators.isPort(t('validation.port')),
+              ),
+              keyId: validators.isNotEmpty(t('validation.required')),
+              apiKey: validators.isNotEmpty(t('validation.required')),
+            },''',
+          )
+          s = s.replace(
+              '''      await createNode({
+                name,
+                address,
+                port: Number(port) || 443,
+                apiKey: apiKey || undefined,
+              });''',
+              '''      await createNode({
+                name,
+                address,
+                port: Number(port) || 8443,
+                keyId,
+                apiKey,
+                caCertificate: caCertificate || undefined,
+                serverName: serverName || undefined,
+              });''',
+          )
+          s = s.replace(
+              '''          <TextInput
+                label={t('nodes.apiKey')}
+                placeholder={t('nodes.optional')}
+                value={nodeForm.values.apiKey}
+                onChange={(e) =>
+                  nodeForm.setFieldValue('apiKey', e.currentTarget.value)
+                }
+                styles={inputStyles}
+              />''',
+              '''          <TextInput
+                label="Agent key ID"
+                placeholder="agent-0123456789abcdef"
+                value={nodeForm.values.keyId}
+                onChange={(e) =>
+                  nodeForm.setFieldValue('keyId', e.currentTarget.value)
+                }
+                onBlur={() => nodeForm.setFieldTouched('keyId', true)}
+                error={nodeForm.getInputProps('keyId').error}
+                styles={inputStyles}
+              />
+              <PasswordInput
+                label="Agent registration secret"
+                description="Shown once by hydraflow-agent init"
+                value={nodeForm.values.apiKey}
+                onChange={(e) =>
+                  nodeForm.setFieldValue('apiKey', e.currentTarget.value)
+                }
+                onBlur={() => nodeForm.setFieldTouched('apiKey', true)}
+                error={nodeForm.getInputProps('apiKey').error}
+                styles={inputStyles}
+              />
+              <Textarea
+                label="Agent CA certificate"
+                description="PEM CA from hydraflow-agent init; optional for publicly trusted certificates"
+                placeholder="-----BEGIN CERTIFICATE-----"
+                autosize
+                minRows={4}
+                maxRows={8}
+                value={nodeForm.values.caCertificate}
+                onChange={(e) =>
+                  nodeForm.setFieldValue('caCertificate', e.currentTarget.value)
+                }
+                styles={inputStyles}
+              />
+              <TextInput
+                label="TLS server name"
+                description="Optional explicit certificate name"
+                placeholder="node-01.example.com"
+                value={nodeForm.values.serverName}
+                onChange={(e) =>
+                  nodeForm.setFieldValue('serverName', e.currentTarget.value)
+                }
+                styles={inputStyles}
+              />''',
+          )
+          p.write_text(s)
+          PY
+      - name: Commit form update
+        run: |
+          if git diff --quiet; then
+            echo "No form diff generated" >&2
+            exit 1
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add frontend/src/pages/Nodes.tsx
+          git commit -m "fix(frontend): complete Agent registration form [agent-form-final]"
+          git push origin HEAD:feat/agent-client-v1
