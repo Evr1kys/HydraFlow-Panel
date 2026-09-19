@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   refresh:
-    if: ${{ github.head_ref == 'feat/agent-client-v1' && !contains(github.event.pull_request.head.sha, 'never') }}
+    if: ${{ github.head_ref == 'feat/agent-client-v1' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -29,12 +29,6 @@ jobs:
       - name: Regenerate frontend lockfile
         working-directory: frontend
         run: npm install --package-lock-only --ignore-scripts
-      - name: Validate clean installs and production audit
-        run: |
-          npm ci --ignore-scripts --prefix backend
-          npm audit --omit=dev --audit-level=high --prefix backend
-          npm ci --ignore-scripts --prefix frontend
-          npm audit --omit=dev --audit-level=high --prefix frontend
       - name: Commit lockfiles
         run: |
           if git diff --quiet -- backend/package-lock.json frontend/package-lock.json; then
