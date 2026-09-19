@@ -1,51 +1,55 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  Table,
-  Button,
-  Group,
-  Text,
-  TextInput,
-  PasswordInput,
-  Textarea,
-  NumberInput,
-  Modal,
-  Stack,
   ActionIcon,
-  Box,
-  Paper,
   Badge,
+  Box,
+  Button,
+  Code,
+  Group,
+  Modal,
+  NumberInput,
   Pagination,
+  Paper,
+  PasswordInput,
+  ScrollArea,
   Select,
-  Chip,
-  UnstyledButton,
+  Stack,
+  Table,
+  Text,
+  Textarea,
+  TextInput,
+  Tooltip,
 } from '@mantine/core';
 import { useDebouncedValue } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import {
-  IconPlus,
-  IconTrash,
-  IconRefresh,
-  IconServer,
-  IconCircleFilled,
   IconAlertTriangle,
-  IconSearch,
-  IconArrowUp,
-  IconArrowDown,
-  IconArrowsSort,
+  IconHistory,
+  IconKey,
+  IconPlus,
+  IconRefresh,
+  IconRestore,
+  IconServer,
+  IconTrash,
 } from '@tabler/icons-react';
 import { useTranslation } from 'react-i18next';
 import {
-  getNodesPaginated,
+  checkNodeHealth,
   createNode,
   deleteNode,
-  checkNodeHealth,
+  getNodeDeployments,
+  getNodesPaginated,
+  restartNode,
+  rollbackNode,
+  rotateNodeKey,
+  type CreateNodeInput,
+  type NodeDeployment,
 } from '../api/nodes';
-import type { Node } from '../types';
-import { LoadingSkeleton } from '../components/LoadingSkeleton';
 import { EmptyState } from '../components/EmptyState';
-import { useFormValidation, validators } from '../hooks/useFormValidation';
-import { usePermissions } from '../hooks/usePermissions';
+import { LoadingSkeleton } from '../components/LoadingSkeleton';
 import { usePaginated } from '../hooks/usePaginated';
+import { usePermissions } from '../hooks/usePermissions';
+import type { Node } from '../types';
 
 const cardStyle = {
   backgroundColor: '#1E2128',
@@ -57,7 +61,7 @@ const cardStyle = {
 const inputStyles = {
   input: {
     backgroundColor: '#161B23',
-    border: '1px solid rgba(255,255,255,0.06)',
+    border: '1px solid rgba(255,255,255,0.08)',
     color: '#C1C2C5',
     borderRadius: 8,
   },
@@ -67,68 +71,42 @@ const inputStyles = {
     fontWeight: 600,
     marginBottom: 4,
   },
+  description: { color: '#5c5f66' },
 };
 
-const thStyle = {
-  color: '#5c5f66',
-  fontSize: '11px',
-  fontWeight: 700,
-  letterSpacing: '0.8px',
-  textTransform: 'uppercase' as const,
+const initialForm: CreateNodeInput = {
+  name: '',
+  address: '',
+  port: 8443,
+  keyId: '',
+  apiKey: '',
+  caCertificate: '',
+  serverName: '',
+  enabled: true,
 };
 
-interface CreateNodeFormValues {
-  name: string;
-  address: string;
-  port: number | '';
-  keyId: string;
-  apiKey: string;
-  caCertificate: string;
-  serverName: string;
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
 }
 
-type NodeStatusFilter = 'all' | 'healthy' | 'degraded' | 'offline' | 'error' | 'unknown';
-
-interface SortableHeaderProps {
-  label: string;
-  field: string;
-  sortBy?: string;
-  sortOrder: 'asc' | 'desc';
-  onToggle: (field: string) => void;
+function statusColor(status: string): string {
+  switch (status) {
+    case 'healthy':
+      return 'teal';
+    case 'degraded':
+      return 'yellow';
+    case 'offline':
+      return 'orange';
+    case 'error':
+      return 'red';
+    default:
+      return 'gray';
+  }
 }
 
-function SortableHeader({
-  label,
-  field,
-  sortBy,
-  sortOrder,
-  onToggle,
-}: SortableHeaderProps) {
-  const active = sortBy === field;
-  const Icon = !active
-    ? IconArrowsSort
-    : sortOrder === 'asc'
-      ? IconArrowUp
-      : IconArrowDown;
-  return (
-    <UnstyledButton
-      onClick={() => onToggle(field)}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 4,
-        color: active ? '#20C997' : '#5c5f66',
-        fontSize: '11px',
-        fontWeight: 700,
-        letterSpacing: '0.8px',
-        textTransform: 'uppercase',
-        cursor: 'pointer',
-      }}
-    >
-      <span>{label}</span>
-      <Icon size={12} stroke={2} />
-    </UnstyledButton>
-  );
+function formatDate(value: string | null): string {
+  return value ? new Date(value).toLocaleString() : 'Never';
 }
 
 export function NodesPage() {
@@ -136,10 +114,15 @@ export function NodesPage() {
   const permissions = usePermissions();
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [checkingId, setCheckingId] = useState<string | null>(null);
+  const [form, setForm] = useState<CreateNodeInput>(initialForm);
   const [searchInput, setSearchInput] = useState('');
   const [debouncedSearch] = useDebouncedValue(searchInput, 300);
-  const [statusFilter, setStatusFilter] = useState<NodeStatusFilter>('all');
+  const [statusFilter, setStatusFilter] = useState<string | null>('all');
+  const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [deploymentsOpen, setDeploymentsOpen] = useState(false);
+  const [deploymentNode, setDeploymentNode] = useState<Node | null>(null);
+  const [deployments, setDeployments] = useState<NodeDeployment[]>([]);
+  const [deploymentsLoading, setDeploymentsLoading] = useState(false);
 
   const paginated = usePaginated<Node>(getNodesPaginated, {
     size: 25,
@@ -147,150 +130,166 @@ export function NodesPage() {
     sortOrder: 'desc',
   });
 
-  const {
-    items: nodes,
-    total,
-    loading,
-    error: loadError,
-    start,
-    size,
-    sortBy,
-    sortOrder,
-    setPage,
-    setSize,
-    toggleSort,
-    setSearch: setPaginatedSearch,
-    setFilter,
-    refetch: fetchNodes,
-  } = paginated;
+  useEffect(() => {
+    paginated.setSearch(debouncedSearch);
+  }, [debouncedSearch, paginated.setSearch]);
 
   useEffect(() => {
-    setPaginatedSearch(debouncedSearch);
-  }, [debouncedSearch, setPaginatedSearch]);
+    paginated.setFilter(
+      'status',
+      statusFilter && statusFilter !== 'all' ? statusFilter : undefined,
+    );
+  }, [statusFilter, paginated.setFilter]);
 
-  useEffect(() => {
-    if (statusFilter === 'all') {
-      setFilter('status', undefined);
-    } else {
-      setFilter('status', statusFilter);
-    }
-  }, [statusFilter, setFilter]);
-
-  const nodeForm = useFormValidation<CreateNodeFormValues>(
-    { name: '', address: '', port: 8443, keyId: '', apiKey: '', caCertificate: '', serverName: '' },
-    {
-      name: validators.combine(
-        validators.isNotEmpty(t('validation.required')),
-        validators.hasLength({ min: 1, max: 100 }),
-      ),
-      address: validators.combine(
-        validators.isNotEmpty(t('validation.required')),
-        validators.isHostOrIp(t('validation.hostOrIp')),
-      ),
-      port: validators.combine(
-        validators.isNotEmpty(t('validation.required')),
-        validators.isPort(t('validation.port')),
-      ),
-    },
+  const totalPages = useMemo(
+    () => Math.max(1, Math.ceil(paginated.total / paginated.size)),
+    [paginated.total, paginated.size],
   );
+  const currentPage = Math.floor(paginated.start / paginated.size) + 1;
+
+  const notifyError = (title: string, error: unknown) => {
+    notifications.show({
+      title,
+      message: errorMessage(error),
+      color: 'red',
+    });
+  };
+
+  const validateCreate = (): string | null => {
+    if (!form.name.trim()) return 'Node name is required';
+    if (!form.address.trim()) return 'Agent address is required';
+    if (!Number.isInteger(form.port) || form.port < 1 || form.port > 65535) {
+      return 'Agent port must be between 1 and 65535';
+    }
+    if (!/^[A-Za-z0-9._-]{3,64}$/.test(form.keyId)) {
+      return 'Agent key ID is invalid';
+    }
+    if (form.apiKey.trim().length < 40) {
+      return 'Agent registration secret is missing or too short';
+    }
+    return null;
+  };
 
   const handleCreate = async () => {
-    if (!nodeForm.validate()) return;
-    const { name, address, port, keyId, apiKey, caCertificate, serverName } = nodeForm.values;
+    const validation = validateCreate();
+    if (validation) {
+      notifications.show({ title: 'Invalid Agent registration', message: validation, color: 'red' });
+      return;
+    }
     setCreating(true);
     try {
       await createNode({
-        name,
-        address,
-        port: Number(port) || 443,
-        apiKey: apiKey || undefined,
+        ...form,
+        name: form.name.trim(),
+        address: form.address.trim(),
+        keyId: form.keyId.trim(),
+        apiKey: form.apiKey.trim(),
+        caCertificate: form.caCertificate?.trim() || undefined,
+        serverName: form.serverName?.trim() || undefined,
       });
       setCreateOpen(false);
-      nodeForm.reset({ port: 8443 });
+      setForm(initialForm);
       notifications.show({
         title: t('common.success'),
-        message: t('notification.nodeAdded'),
+        message: 'Agent verified and registered',
         color: 'teal',
       });
-      await fetchNodes();
-    } catch {
-      notifications.show({
-        title: t('common.error'),
-        message: t('notification.nodeAddError'),
-        color: 'red',
-      });
+      await paginated.refetch();
+    } catch (error) {
+      notifyError('Agent registration failed', error);
     } finally {
       setCreating(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const runNodeAction = async (
+    key: string,
+    action: () => Promise<unknown>,
+    successMessage: string,
+  ) => {
+    setBusyAction(key);
     try {
-      await deleteNode(id);
+      await action();
       notifications.show({
         title: t('common.success'),
-        message: t('notification.nodeDeleted'),
+        message: successMessage,
         color: 'teal',
       });
-      await fetchNodes();
-    } catch {
-      notifications.show({
-        title: t('common.error'),
-        message: t('notification.nodeDeleteError'),
-        color: 'red',
-      });
-    }
-  };
-
-  const handleCheck = async (id: string) => {
-    setCheckingId(id);
-    try {
-      const updated = await checkNodeHealth(id);
-      notifications.show({
-        title: t('common.success'),
-        message: t('notification.healthCheckResult', {
-          status: updated.status,
-        }),
-        color: updated.status === 'healthy' ? 'teal' : 'red',
-      });
-      await fetchNodes();
-    } catch {
-      notifications.show({
-        title: t('common.error'),
-        message: t('notification.healthCheckError'),
-        color: 'red',
-      });
+      await paginated.refetch();
+    } catch (error) {
+      notifyError('Agent operation failed', error);
     } finally {
-      setCheckingId(null);
+      setBusyAction(null);
     }
   };
 
-  const totalPages = Math.max(1, Math.ceil(total / size));
-  const currentPage = Math.floor(start / size) + 1;
+  const handleDelete = async (node: Node) => {
+    if (!window.confirm(`Delete Agent node “${node.name}”?`)) return;
+    await runNodeAction(
+      `delete:${node.id}`,
+      () => deleteNode(node.id),
+      'Node deleted',
+    );
+  };
 
-  if (loading && nodes.length === 0) {
-    return <LoadingSkeleton variant="table" rows={4} />;
+  const openDeployments = async (node: Node) => {
+    setDeploymentNode(node);
+    setDeploymentsOpen(true);
+    setDeploymentsLoading(true);
+    try {
+      setDeployments(await getNodeDeployments(node.id));
+    } catch (error) {
+      notifyError('Could not load deployment history', error);
+      setDeployments([]);
+    } finally {
+      setDeploymentsLoading(false);
+    }
+  };
+
+  const handleRollback = async (deployment: NodeDeployment) => {
+    if (!deploymentNode || !deployment.revision) return;
+    if (
+      !window.confirm(
+        `Roll back ${deploymentNode.name} to revision ${deployment.revision}?`,
+      )
+    ) {
+      return;
+    }
+    await runNodeAction(
+      `rollback:${deployment.id}`,
+      () =>
+        rollbackNode(
+          deploymentNode.id,
+          deployment.revision as string,
+          `Panel rollback from deployment ${deployment.id}`,
+        ),
+      `Rolled back to ${deployment.revision}`,
+    );
+    setDeployments(await getNodeDeployments(deploymentNode.id));
+  };
+
+  if (paginated.loading && paginated.items.length === 0) {
+    return <LoadingSkeleton variant="table" rows={5} />;
   }
 
-  if (loadError) {
+  if (paginated.error) {
     return (
       <EmptyState
         icon={IconAlertTriangle}
         title={t('common.error')}
-        message={loadError}
+        message={paginated.error}
       />
     );
   }
 
   return (
     <Stack gap="lg">
-      {/* Header */}
-      <Group justify="space-between">
+      <Group justify="space-between" align="center">
         <Group gap="sm">
           <Box
             style={{
-              width: 36,
-              height: 36,
+              width: 38,
+              height: 38,
               borderRadius: '50%',
               backgroundColor: 'rgba(32,201,151,0.1)',
               display: 'flex',
@@ -298,335 +297,413 @@ export function NodesPage() {
               justifyContent: 'center',
             }}
           >
-            <IconServer size={20} color="#20C997" stroke={1.5} />
+            <IconServer size={21} color="#20C997" />
           </Box>
-          <Text size="22px" fw={700} style={{ color: '#C1C2C5' }}>
+          <Text size="22px" fw={700} c="#C1C2C5">
             {t('nodes.title')}
           </Text>
-          <Badge
-            variant="light"
-            color="teal"
-            size="lg"
-            style={{ fontFamily: "'JetBrains Mono', monospace" }}
-          >
-            {total}
+          <Badge variant="light" color="teal" size="lg">
+            {paginated.total}
           </Badge>
         </Group>
         {permissions.canManageNodes && (
           <Button
             leftSection={<IconPlus size={16} />}
-            variant="gradient"
-            gradient={{ from: 'teal', to: 'cyan' }}
-            radius="md"
+            color="teal"
             onClick={() => setCreateOpen(true)}
           >
-            {t('nodes.addNode')}
+            Register Agent
           </Button>
         )}
       </Group>
 
-      {/* Search + Filters */}
-      <Group gap="sm" wrap="wrap" align="center">
+      <Group align="end" wrap="wrap">
         <TextInput
-          placeholder="Search by name or address"
-          leftSection={<IconSearch size={16} color="#5c5f66" />}
+          label="Search"
+          placeholder="Name or address"
           value={searchInput}
-          onChange={(e) => setSearchInput(e.currentTarget.value)}
-          radius="md"
-          style={{ flex: 1, minWidth: 240 }}
-          styles={{
-            input: {
-              backgroundColor: '#1E2128',
-              border: '1px solid rgba(255,255,255,0.06)',
-              color: '#C1C2C5',
-              height: 42,
-            },
-          }}
+          onChange={(event) => setSearchInput(event.currentTarget.value)}
+          styles={inputStyles}
+          style={{ flex: 1, minWidth: 250 }}
         />
-        <Chip.Group
+        <Select
+          label="Status"
           value={statusFilter}
-          onChange={(v) => setStatusFilter(v as NodeStatusFilter)}
-        >
-          <Group gap="xs">
-            <Chip value="all" color="teal" radius="md" size="sm">
-              All
-            </Chip>
-            <Chip value="healthy" color="teal" radius="md" size="sm">
-              Healthy
-            </Chip>
-            <Chip value="error" color="red" radius="md" size="sm">
-              Error
-            </Chip>
-            <Chip value="unknown" color="gray" radius="md" size="sm">
-              Unknown
-            </Chip>
-          </Group>
-        </Chip.Group>
+          onChange={setStatusFilter}
+          data={[
+            { value: 'all', label: 'All' },
+            { value: 'healthy', label: 'Healthy' },
+            { value: 'degraded', label: 'Degraded' },
+            { value: 'offline', label: 'Offline' },
+            { value: 'error', label: 'Error' },
+            { value: 'unknown', label: 'Unknown' },
+          ]}
+          styles={inputStyles}
+          w={170}
+        />
+        <Select
+          label="Rows"
+          value={String(paginated.size)}
+          onChange={(value) => paginated.setSize(Number(value ?? 25))}
+          data={['10', '25', '50', '100']}
+          styles={inputStyles}
+          w={100}
+        />
       </Group>
 
-      {/* Table */}
       <Paper style={{ ...cardStyle, overflow: 'hidden' }}>
-        <Box style={{ overflowX: 'auto' }}>
-          <Table
-            horizontalSpacing="md"
-            verticalSpacing="sm"
-            styles={{
-              table: { borderCollapse: 'separate', borderSpacing: 0 },
-            }}
-          >
+        <ScrollArea>
+          <Table horizontalSpacing="md" verticalSpacing="sm" miw={1050}>
             <Table.Thead>
-              <Table.Tr
-                style={{
-                  borderBottom: '1px solid rgba(255,255,255,0.06)',
-                  backgroundColor: 'rgba(255,255,255,0.02)',
-                }}
-              >
-                <Table.Th style={thStyle}>
-                  <SortableHeader
-                    label={t('nodes.name')}
-                    field="name"
-                    sortBy={sortBy}
-                    sortOrder={sortOrder}
-                    onToggle={toggleSort}
-                  />
-                </Table.Th>
-                <Table.Th style={thStyle}>{t('nodes.address')}</Table.Th>
-                <Table.Th style={thStyle}>
-                  <SortableHeader
-                    label={t('nodes.status')}
-                    field="status"
-                    sortBy={sortBy}
-                    sortOrder={sortOrder}
-                    onToggle={toggleSort}
-                  />
-                </Table.Th>
-                <Table.Th style={thStyle}>
-                  <SortableHeader
-                    label={t('nodes.lastChecked')}
-                    field="lastCheck"
-                    sortBy={sortBy}
-                    sortOrder={sortOrder}
-                    onToggle={toggleSort}
-                  />
-                </Table.Th>
-                <Table.Th style={{ ...thStyle, width: 100 }}>{t('nodes.actions')}</Table.Th>
+              <Table.Tr>
+                <Table.Th>Name</Table.Th>
+                <Table.Th>Agent</Table.Th>
+                <Table.Th>Status</Table.Th>
+                <Table.Th>Version / revision</Table.Th>
+                <Table.Th>Last activity</Table.Th>
+                <Table.Th>Security</Table.Th>
+                <Table.Th>Actions</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
-              {nodes.map((node, idx) => {
-                const dotColor =
-                  node.status === 'healthy'
-                    ? '#51cf66'
-                    : node.status === 'error'
-                      ? '#ff6b6b'
-                      : '#5c5f66';
-                return (
-                  <Table.Tr
-                    key={node.id}
-                    style={{
-                      borderBottom: '1px solid rgba(255,255,255,0.03)',
-                      backgroundColor: idx % 2 === 1 ? 'rgba(255,255,255,0.015)' : 'transparent',
-                      transition: 'background-color 0.15s ease',
-                    }}
-                    onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLElement).style.backgroundColor = '#252A35';
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLElement).style.backgroundColor =
-                        idx % 2 === 1 ? 'rgba(255,255,255,0.015)' : 'transparent';
-                    }}
-                  >
-                    <Table.Td>
-                      <Text size="sm" fw={500} style={{ color: '#C1C2C5' }}>
-                        {node.name}
-                      </Text>
-                    </Table.Td>
-                    <Table.Td>
-                      <Text size="sm" ff="monospace" fw={500} style={{ color: '#C1C2C5' }}>
-                        {node.address}:{node.port}
-                      </Text>
-                    </Table.Td>
-                    <Table.Td>
-                      <Group gap={6}>
-                        <IconCircleFilled size={8} color={dotColor} />
-                        <Text size="xs" fw={500} style={{ color: dotColor }}>
-                          {node.status}
+              {paginated.items.map((node) => (
+                <Table.Tr key={node.id}>
+                  <Table.Td>
+                    <Text fw={600} c="#C1C2C5">
+                      {node.name}
+                    </Text>
+                    {node.lastSyncError && (
+                      <Tooltip label={node.lastSyncError} multiline maw={420}>
+                        <Text size="xs" c="red" lineClamp={1} maw={190}>
+                          {node.lastSyncError}
                         </Text>
-                      </Group>
-                    </Table.Td>
-                    <Table.Td>
-                      <Text size="sm" style={{ color: '#909296' }}>
-                        {node.lastCheck
-                          ? new Date(node.lastCheck).toLocaleString()
-                          : t('nodes.never')}
+                      </Tooltip>
+                    )}
+                  </Table.Td>
+                  <Table.Td>
+                    <Code>{node.address}:{node.port}</Code>
+                  </Table.Td>
+                  <Table.Td>
+                    <Badge color={statusColor(node.status)} variant="light">
+                      {node.status}
+                    </Badge>
+                  </Table.Td>
+                  <Table.Td>
+                    <Stack gap={2}>
+                      <Text size="xs" c="dimmed">
+                        API {node.agentApiVersion ?? 'unknown'} · Agent{' '}
+                        {node.agentVersion ?? 'unknown'}
                       </Text>
-                    </Table.Td>
-                    <Table.Td>
-                      <Group gap="xs">
+                      <Tooltip label={node.lastRevision ?? 'No active revision'}>
+                        <Code>{node.lastRevision?.slice(0, 22) ?? 'no revision'}</Code>
+                      </Tooltip>
+                    </Stack>
+                  </Table.Td>
+                  <Table.Td>
+                    <Text size="xs" c="dimmed">
+                      Check: {formatDate(node.lastCheck)}
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      Sync: {formatDate(node.lastSyncAt)}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Stack gap={3}>
+                      <Badge
+                        size="xs"
+                        color={node.credentialsConfigured ? 'teal' : 'red'}
+                      >
+                        {node.credentialsConfigured ? 'Signed' : 'No credentials'}
+                      </Badge>
+                      <Badge
+                        size="xs"
+                        color={node.customCaConfigured ? 'blue' : 'gray'}
+                      >
+                        {node.customCaConfigured ? 'Custom CA' : 'System CA'}
+                      </Badge>
+                    </Stack>
+                  </Table.Td>
+                  <Table.Td>
+                    <Group gap={4} wrap="nowrap">
+                      {permissions.canEdit && (
+                        <Tooltip label="Health check">
+                          <ActionIcon
+                            variant="subtle"
+                            color="teal"
+                            loading={busyAction === `check:${node.id}`}
+                            onClick={() =>
+                              void runNodeAction(
+                                `check:${node.id}`,
+                                () => checkNodeHealth(node.id),
+                                'Agent health refreshed',
+                              )
+                            }
+                          >
+                            <IconRefresh size={16} />
+                          </ActionIcon>
+                        </Tooltip>
+                      )}
+                      <Tooltip label="Deployment history">
                         <ActionIcon
                           variant="subtle"
-                          color="teal"
-                          radius="md"
-                          loading={checkingId === node.id}
-                          onClick={() => handleCheck(node.id)}
-                          style={{ border: '1px solid rgba(32,201,151,0.15)' }}
+                          color="blue"
+                          onClick={() => void openDeployments(node)}
                         >
-                          <IconRefresh size={14} />
+                          <IconHistory size={16} />
                         </ActionIcon>
-                        {permissions.canDelete && (
+                      </Tooltip>
+                      {permissions.canManageNodes && (
+                        <Tooltip label="Restart Xray">
+                          <ActionIcon
+                            variant="subtle"
+                            color="orange"
+                            loading={busyAction === `restart:${node.id}`}
+                            onClick={() =>
+                              void runNodeAction(
+                                `restart:${node.id}`,
+                                () => restartNode(node.id),
+                                'Xray restarted through Agent',
+                              )
+                            }
+                          >
+                            <IconRestore size={16} />
+                          </ActionIcon>
+                        </Tooltip>
+                      )}
+                      {permissions.role === 'superadmin' && (
+                        <Tooltip label="Rotate Agent key">
+                          <ActionIcon
+                            variant="subtle"
+                            color="violet"
+                            loading={busyAction === `rotate:${node.id}`}
+                            onClick={() =>
+                              void runNodeAction(
+                                `rotate:${node.id}`,
+                                () => rotateNodeKey(node.id),
+                                'Agent credential rotated',
+                              )
+                            }
+                          >
+                            <IconKey size={16} />
+                          </ActionIcon>
+                        </Tooltip>
+                      )}
+                      {permissions.canDelete && (
+                        <Tooltip label="Delete node">
                           <ActionIcon
                             variant="subtle"
                             color="red"
-                            radius="md"
-                            onClick={() => handleDelete(node.id)}
-                            style={{ border: '1px solid rgba(255,107,107,0.15)' }}
+                            loading={busyAction === `delete:${node.id}`}
+                            onClick={() => void handleDelete(node)}
                           >
-                            <IconTrash size={14} />
+                            <IconTrash size={16} />
                           </ActionIcon>
-                        )}
-                      </Group>
-                    </Table.Td>
-                  </Table.Tr>
-                );
-              })}
-              {nodes.length === 0 && (
+                        </Tooltip>
+                      )}
+                    </Group>
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+              {paginated.items.length === 0 && (
                 <Table.Tr>
-                  <Table.Td colSpan={5} style={{ padding: 0 }}>
+                  <Table.Td colSpan={7}>
                     <EmptyState
                       icon={IconServer}
-                      message={t('nodes.noNodes')}
+                      message="No HydraFlow Agents match the current filter"
                       minHeight={220}
-                      action={
-                        permissions.canManageNodes ? (
-                          <Button
-                            leftSection={<IconPlus size={14} />}
-                            variant="light"
-                            color="teal"
-                            radius="md"
-                            size="sm"
-                            onClick={() => setCreateOpen(true)}
-                          >
-                            {t('nodes.addNode')}
-                          </Button>
-                        ) : undefined
-                      }
                     />
                   </Table.Td>
                 </Table.Tr>
               )}
             </Table.Tbody>
           </Table>
-        </Box>
+        </ScrollArea>
       </Paper>
 
-      {/* Pagination + page size */}
-      <Group justify="space-between" wrap="wrap" gap="md">
-        <Group gap="xs" align="center">
-          <Text size="xs" style={{ color: '#5c5f66' }}>
-            Rows per page
-          </Text>
-          <Select
-            data={['10', '25', '50', '100']}
-            value={String(size)}
-            onChange={(v) => v && setSize(Number(v))}
-            w={80}
-            size="xs"
-            allowDeselect={false}
-            styles={inputStyles}
-          />
-          <Text size="xs" style={{ color: '#5c5f66' }}>
-            {total === 0
-              ? '0'
-              : `${start + 1}-${Math.min(start + size, total)} of ${total}`}
-          </Text>
-        </Group>
+      <Group justify="space-between">
+        <Text size="sm" c="dimmed">
+          {paginated.total === 0
+            ? '0 nodes'
+            : `${paginated.start + 1}–${Math.min(
+                paginated.start + paginated.size,
+                paginated.total,
+              )} of ${paginated.total}`}
+        </Text>
         <Pagination
-          total={totalPages}
           value={currentPage}
-          onChange={setPage}
+          total={totalPages}
+          onChange={paginated.setPage}
           color="teal"
-          radius="md"
-          size="sm"
-          siblings={1}
-          boundaries={1}
         />
       </Group>
 
-      {/* Create Node Modal */}
       <Modal
         opened={createOpen}
-        onClose={() => setCreateOpen(false)}
-        title={t('nodes.addNode')}
-        radius="lg"
-        styles={{
-          content: {
-            backgroundColor: '#1E2128',
-            border: '1px solid rgba(255,255,255,0.06)',
-          },
-          header: {
-            backgroundColor: '#1E2128',
-            borderBottom: '1px solid rgba(255,255,255,0.06)',
-          },
-          title: { color: '#C1C2C5', fontWeight: 600 },
-          close: { color: '#909296' },
-        }}
+        onClose={() => !creating && setCreateOpen(false)}
+        title="Register HydraFlow Agent"
+        size="lg"
+        centered
       >
-        <Stack gap="md" mt="md">
+        <Stack>
+          <Text size="sm" c="dimmed">
+            Run <Code>hydraflow-agent init --hosts ...</Code> on the node and
+            enter the one-time registration material. Panel verifies TLS,
+            API compatibility and Xray health before saving it.
+          </Text>
           <TextInput
-            label={t('nodes.name')}
-            placeholder="Node-1"
-            value={nodeForm.values.name}
-            onChange={(e) =>
-              nodeForm.setFieldValue('name', e.currentTarget.value)
+            label="Name"
+            value={form.name}
+            onChange={(event) =>
+              setForm((current) => ({ ...current, name: event.currentTarget.value }))
             }
-            onBlur={() => nodeForm.setFieldTouched('name', true)}
-            error={nodeForm.getInputProps('name').error}
+            styles={inputStyles}
+            required
+          />
+          <Group grow align="end">
+            <TextInput
+              label="Agent DNS name or public IP"
+              value={form.address}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, address: event.currentTarget.value }))
+              }
+              styles={inputStyles}
+              required
+            />
+            <NumberInput
+              label="HTTPS port"
+              value={form.port}
+              onChange={(value) =>
+                setForm((current) => ({
+                  ...current,
+                  port: typeof value === 'number' ? value : 8443,
+                }))
+              }
+              min={1}
+              max={65535}
+              styles={inputStyles}
+              required
+            />
+          </Group>
+          <TextInput
+            label="Agent key ID"
+            placeholder="agent-0123456789abcdef"
+            value={form.keyId}
+            onChange={(event) =>
+              setForm((current) => ({ ...current, keyId: event.currentTarget.value }))
+            }
+            styles={inputStyles}
+            required
+          />
+          <PasswordInput
+            label="Agent registration secret"
+            description="Shown once by hydraflow-agent init"
+            value={form.apiKey}
+            onChange={(event) =>
+              setForm((current) => ({ ...current, apiKey: event.currentTarget.value }))
+            }
+            styles={inputStyles}
+            required
+          />
+          <Textarea
+            label="Agent CA certificate"
+            description="PEM CA generated by Agent init; optional for a publicly trusted certificate"
+            placeholder="-----BEGIN CERTIFICATE-----"
+            autosize
+            minRows={4}
+            maxRows={8}
+            value={form.caCertificate}
+            onChange={(event) =>
+              setForm((current) => ({
+                ...current,
+                caCertificate: event.currentTarget.value,
+              }))
+            }
             styles={inputStyles}
           />
           <TextInput
-            label={t('nodes.address')}
+            label="TLS server name"
+            description="Optional explicit certificate name"
             placeholder="node-01.example.com"
-            value={nodeForm.values.address}
-            onChange={(e) =>
-              nodeForm.setFieldValue('address', e.currentTarget.value)
-            }
-            onBlur={() => nodeForm.setFieldTouched('address', true)}
-            error={nodeForm.getInputProps('address').error}
-            styles={inputStyles}
-          />
-          <NumberInput
-            label={t('nodes.port')}
-            value={nodeForm.values.port}
-            onChange={(v) =>
-              nodeForm.setFieldValue('port', v === '' ? '' : Number(v))
-            }
-            onBlur={() => nodeForm.setFieldTouched('port', true)}
-            error={nodeForm.getInputProps('port').error}
-            min={1}
-            max={65535}
-            styles={inputStyles}
-          />
-          <TextInput
-            label={t('nodes.apiKey')}
-            placeholder={t('nodes.optional')}
-            value={nodeForm.values.apiKey}
-            onChange={(e) =>
-              nodeForm.setFieldValue('apiKey', e.currentTarget.value)
+            value={form.serverName}
+            onChange={(event) =>
+              setForm((current) => ({
+                ...current,
+                serverName: event.currentTarget.value,
+              }))
             }
             styles={inputStyles}
           />
-          <Button
-            variant="gradient"
-            gradient={{ from: 'teal', to: 'cyan' }}
-            loading={creating}
-            onClick={handleCreate}
-            disabled={!nodeForm.isValid || creating}
-            radius="md"
-            fullWidth
-          >
-            {t('nodes.addNode')}
-          </Button>
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setCreateOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button color="teal" loading={creating} onClick={() => void handleCreate()}>
+              Verify and register
+            </Button>
+          </Group>
         </Stack>
+      </Modal>
+
+      <Modal
+        opened={deploymentsOpen}
+        onClose={() => setDeploymentsOpen(false)}
+        title={`Deployment history${deploymentNode ? ` — ${deploymentNode.name}` : ''}`}
+        size="xl"
+        centered
+      >
+        {deploymentsLoading ? (
+          <LoadingSkeleton variant="list" rows={4} />
+        ) : deployments.length === 0 ? (
+          <Text c="dimmed">No configuration deployments recorded.</Text>
+        ) : (
+          <ScrollArea h={460}>
+            <Stack gap="sm">
+              {deployments.map((deployment) => (
+                <Paper key={deployment.id} p="sm" withBorder bg="#161B23">
+                  <Group justify="space-between" align="flex-start" wrap="nowrap">
+                    <Stack gap={3} style={{ minWidth: 0 }}>
+                      <Group gap="xs">
+                        <Badge color={statusColor(
+                          deployment.status === 'succeeded'
+                            ? 'healthy'
+                            : deployment.status === 'failed'
+                              ? 'error'
+                              : 'degraded',
+                        )}>
+                          {deployment.status}
+                        </Badge>
+                        <Text size="xs" c="dimmed">
+                          {new Date(deployment.createdAt).toLocaleString()}
+                        </Text>
+                      </Group>
+                      <Code>{deployment.revision ?? 'No revision'}</Code>
+                      <Text size="xs" c="dimmed" lineClamp={1}>
+                        SHA-256 {deployment.configHash}
+                      </Text>
+                      {deployment.error && (
+                        <Text size="xs" c="red">
+                          {deployment.error}
+                        </Text>
+                      )}
+                    </Stack>
+                    {permissions.canManageNodes && deployment.revision && (
+                      <Button
+                        size="xs"
+                        variant="light"
+                        color="orange"
+                        leftSection={<IconRestore size={14} />}
+                        loading={busyAction === `rollback:${deployment.id}`}
+                        onClick={() => void handleRollback(deployment)}
+                      >
+                        Roll back
+                      </Button>
+                    )}
+                  </Group>
+                </Paper>
+              ))}
+            </Stack>
+          </ScrollArea>
+        )}
       </Modal>
     </Stack>
   );
