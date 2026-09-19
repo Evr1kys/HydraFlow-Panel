@@ -15,7 +15,7 @@ import {
 import type {
   RegistrationResponseJSON,
   AuthenticationResponseJSON,
-  AuthenticatorTransportFuture,
+  AuthenticatorTransport,
 } from '@simplewebauthn/server';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SessionsService } from '../sessions.service';
@@ -71,7 +71,7 @@ export class PasskeysService {
 
     const excludeCredentials = admin.passkeys.map((pk) => ({
       id: pk.credentialId,
-      transports: pk.transports as AuthenticatorTransportFuture[],
+      transports: pk.transports as AuthenticatorTransport[],
     }));
 
     const options = await generateRegistrationOptions({
@@ -187,7 +187,7 @@ export class PasskeysService {
         id: passkey.credentialId,
         publicKey: new Uint8Array(passkey.publicKey),
         counter: passkey.counter,
-        transports: passkey.transports as AuthenticatorTransportFuture[],
+        transports: passkey.transports as AuthenticatorTransport[],
       },
     });
 
