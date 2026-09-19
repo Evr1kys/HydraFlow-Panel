@@ -12,7 +12,13 @@ function toBool(value: unknown): boolean | undefined {
   return undefined;
 }
 
-export const NODE_STATUS_VALUES = ['healthy', 'error', 'unknown'] as const;
+export const NODE_STATUS_VALUES = [
+  'healthy',
+  'degraded',
+  'offline',
+  'error',
+  'unknown',
+] as const;
 export type NodeStatusFilter = (typeof NODE_STATUS_VALUES)[number];
 
 export class NodesPaginatedQueryDto extends PaginationQueryDto {

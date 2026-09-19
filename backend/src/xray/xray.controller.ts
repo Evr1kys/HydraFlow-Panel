@@ -1,60 +1,76 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import {
-  ApiTags,
+  Body,
+  Controller,
+  Get,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import {
   ApiBearerAuth,
   ApiOperation,
   ApiResponse,
+  ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import { XrayService } from './xray.service';
 import { ValidateConfigDto } from './dto/validate-config.dto';
 import { SaveConfigDto } from './dto/save-config.dto';
 
+interface AuthenticatedRequest {
+  user?: { id?: string };
+}
+
 @ApiTags('Xray')
 @ApiBearerAuth('default')
 @Controller('api/xray')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class XrayController {
   constructor(private readonly xrayService: XrayService) {}
 
   @Get('status')
-  @ApiOperation({ summary: 'Get Xray process status' })
-  @ApiResponse({ status: 200, description: 'Xray status with version and uptime' })
+  @ApiOperation({ summary: 'Get aggregate Agent and Xray status' })
+  @ApiResponse({ status: 200, description: 'Status of enabled Agent nodes' })
   getStatus() {
     return this.xrayService.getStatus();
   }
 
   @Post('restart')
-  @ApiOperation({ summary: 'Restart Xray process' })
-  @ApiResponse({ status: 201, description: 'Xray restarted successfully' })
+  @Roles('superadmin', 'admin')
+  @ApiOperation({ summary: 'Restart Xray through all enabled Agents' })
   restart() {
     return this.xrayService.restart();
   }
 
   @Get('config')
-  @ApiOperation({ summary: 'Get current Xray JSON config' })
-  @ApiResponse({ status: 200, description: 'Current config as JSON string' })
+  @ApiOperation({ summary: 'Get desired Xray JSON configuration' })
   getConfig() {
     return this.xrayService.getConfig();
   }
 
   @Post('config')
-  @ApiOperation({ summary: 'Save config and restart Xray' })
-  @ApiResponse({ status: 201, description: 'Config saved and Xray restarted' })
-  saveConfig(@Body() dto: SaveConfigDto) {
-    return this.xrayService.saveConfig(dto.config);
+  @Roles('superadmin', 'admin')
+  @ApiOperation({
+    summary: 'Validate and atomically deploy config through Agent API v1',
+  })
+  saveConfig(
+    @Body() dto: SaveConfigDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.xrayService.saveConfig(dto.config, request.user?.id);
   }
 
   @Get('config/default')
-  @ApiOperation({ summary: 'Get auto-generated default config' })
-  @ApiResponse({ status: 200, description: 'Default config based on current settings' })
+  @ApiOperation({ summary: 'Get generated config based on current data' })
   getDefaultConfig() {
     return this.xrayService.getDefaultConfig();
   }
 
   @Post('validate')
-  @ApiOperation({ summary: 'Validate Xray JSON config without applying' })
-  @ApiResponse({ status: 201, description: 'Validation result with errors/warnings' })
+  @Roles('superadmin', 'admin', 'operator')
+  @ApiOperation({ summary: 'Run structural validation before deployment' })
   validateConfig(@Body() dto: ValidateConfigDto) {
     return this.xrayService.validateConfig(dto.config);
   }

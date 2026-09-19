@@ -43,13 +43,17 @@ services:
       DATABASE_URL: postgresql://hydraflow:${DB_PASSWORD:?DB_PASSWORD must be set in .env}@postgres:5432/hydraflow
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
+      CREDENTIALS_ENCRYPTION_KEY: ${CREDENTIALS_ENCRYPTION_KEY:?CREDENTIALS_ENCRYPTION_KEY must be set in .env}
       ADMIN_EMAIL: ${ADMIN_EMAIL:?ADMIN_EMAIL must be set in .env}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD must be set in .env}
       CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN must be set in .env}
       SERVER_PUBLIC_IP: ${SERVER_PUBLIC_IP:-}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?PUBLIC_BASE_URL must be set in .env}
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
-      NODE_CA_CERT_PATH: ${NODE_CA_CERT_PATH:-}
+      NODE_AGENT_CA_CERT_PATH: ${NODE_AGENT_CA_CERT_PATH:-}
+      NODE_CLIENT_CERT_PATH: ${NODE_CLIENT_CERT_PATH:-}
+      NODE_CLIENT_KEY_PATH: ${NODE_CLIENT_KEY_PATH:-}
+      NODE_AGENT_PRIVATE_ALLOWLIST: ${NODE_AGENT_PRIVATE_ALLOWLIST:-}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
       TELEGRAM_ADMIN_ID: ${TELEGRAM_ADMIN_ID:-}
@@ -64,6 +68,7 @@ services:
       NOWPAYMENTS_IPN_SECRET: ${NOWPAYMENTS_IPN_SECRET:-}
     volumes:
       - backupdata:/var/backups/hydraflow
+      - ${NODE_TLS_SECRETS_DIR:-./secrets}:/run/secrets/hydraflow:ro
     expose:
       - "3000"
     security_opt:
