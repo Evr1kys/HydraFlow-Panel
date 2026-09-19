@@ -1,0 +1,32 @@
+name: Apply PR2 fixes
+
+on:
+  push:
+    branches:
+      - feat/agent-client-v1
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.head_commit.message == 'chore: stage Agent integration fixes'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/agent-client-v1
+          fetch-depth: 0
+      - name: Apply reviewed patch
+        run: |
+          git apply --check .github/pr2-fixes.patch
+          git apply .github/pr2-fixes.patch
+      - name: Commit fixes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/ci.yml backend/package.json frontend/package.json \
+            backend/src/nodes/dto/nodes-paginated-query.dto.ts \
+            backend/src/nodes/nodes.service.ts backend/test/nodes.service.spec.ts
+          git commit -m 'fix: complete Agent integration and stabilize CI'
+          git push origin HEAD:feat/agent-client-v1
