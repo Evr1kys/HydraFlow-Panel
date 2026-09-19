@@ -397,28 +397,20 @@ export class NodesService {
     initiatedBy?: string,
   ): Promise<SyncResult> {
     const idempotencyKey = `cfg:${node.id}:${hash}`;
-    const existing = await this.prisma.nodeDeployment.findUnique({
-      where: { idempotencyKey },
-    });
-    if (existing?.status === 'succeeded') {
+    const deployment = await this.getOrCreateDeployment(
+      node.id,
+      idempotencyKey,
+      hash,
+      initiatedBy,
+    );
+    if (deployment.status === 'succeeded') {
       return {
         nodeId: node.id,
         success: true,
-        revision: existing.revision ?? undefined,
-        deploymentId: existing.id,
+        revision: deployment.revision ?? undefined,
+        deploymentId: deployment.id,
       };
     }
-
-    const deployment = existing ??
-      (await this.prisma.nodeDeployment.create({
-        data: {
-          nodeId: node.id,
-          idempotencyKey,
-          configHash: hash,
-          initiatedBy,
-          status: 'pending',
-        },
-      }));
 
     try {
       const credentials = await this.credentials(node);
@@ -496,6 +488,53 @@ export class NodesService {
         error: message,
       };
     }
+  }
+
+  private async getOrCreateDeployment(
+    nodeId: string,
+    idempotencyKey: string,
+    configHash: string,
+    initiatedBy?: string,
+  ) {
+    const existing = await this.prisma.nodeDeployment.findUnique({
+      where: { idempotencyKey },
+    });
+    if (existing) return existing;
+
+    try {
+      return await this.prisma.nodeDeployment.create({
+        data: {
+          nodeId,
+          idempotencyKey,
+          configHash,
+          initiatedBy,
+          status: 'pending',
+        },
+      });
+    } catch (error) {
+      // Parallel requests for the same desired config are expected to race on
+      // the unique idempotency key. Re-read the winner instead of reporting a
+      // false deployment failure.
+      if (this.isUniqueConstraintError(error)) {
+        const concurrent = await this.prisma.nodeDeployment.findUnique({
+          where: { idempotencyKey },
+        });
+        if (concurrent) return concurrent;
+      }
+      throw error;
+    }
+  }
+
+  private isUniqueConstraintError(error: unknown): boolean {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
+    ) || (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error as { code?: unknown }).code === 'P2002'
+    );
   }
 
   private parseConfig(config: string): unknown {

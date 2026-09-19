@@ -171,6 +171,43 @@ describe('NodesService Agent integration', () => {
     });
   });
 
+  it('reuses a concurrent deployment created by another request', async () => {
+    const node = makeNode();
+    const existing = {
+      id: 'deployment-concurrent',
+      nodeId: node.id,
+      idempotencyKey: 'cfg:node-1:hash',
+      configHash: 'hash',
+      revision: 'rev-concurrent',
+      status: 'succeeded',
+      error: null,
+      initiatedBy: 'admin-1',
+      createdAt: new Date(),
+      finishedAt: new Date(),
+    };
+    mockPrisma.node.findMany.mockResolvedValue([node]);
+    mockPrisma.nodeDeployment.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(existing);
+    mockPrisma.nodeDeployment.create.mockRejectedValue({ code: 'P2002' });
+
+    const results = await createService().pushConfigToAll(
+      JSON.stringify({ inbounds: [], outbounds: [] }),
+      'admin-1',
+    );
+
+    expect(results).toEqual([
+      {
+        nodeId: node.id,
+        success: true,
+        revision: 'rev-concurrent',
+        deploymentId: 'deployment-concurrent',
+      },
+    ]);
+    expect(mockAgent.validate).not.toHaveBeenCalled();
+    expect(mockAgent.apply).not.toHaveBeenCalled();
+  });
+
   it('reuses a successful deployment without calling the Agent', async () => {
     const node = makeNode();
     mockPrisma.node.findMany.mockResolvedValue([node]);
