@@ -29,98 +29,92 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          p = Path('frontend/src/pages/Nodes.tsx')
-          s = p.read_text()
-          s = s.replace(
-              '''      port: validators.combine(
-                validators.isNotEmpty(t('validation.required')),
-                validators.isPort(t('validation.port')),
-              ),
-            },''',
-              '''      port: validators.combine(
-                validators.isNotEmpty(t('validation.required')),
-                validators.isPort(t('validation.port')),
-              ),
-              keyId: validators.isNotEmpty(t('validation.required')),
-              apiKey: validators.isNotEmpty(t('validation.required')),
-            },''',
+          import re
+
+          path = Path('frontend/src/pages/Nodes.tsx')
+          source = path.read_text()
+          result = source
+
+          result, validators_count = re.subn(
+              r"(      port: validators\.combine\(\n        validators\.isNotEmpty\(t\('validation\.required'\)\),\n        validators\.isPort\(t\('validation\.port'\)\),\n      \),\n)(    \},)",
+              r"\1      keyId: validators.isNotEmpty(t('validation.required')),\n      apiKey: validators.isNotEmpty(t('validation.required')),\n\2",
+              result,
+              count=1,
           )
-          s = s.replace(
-              '''      await createNode({
-                name,
-                address,
-                port: Number(port) || 443,
-                apiKey: apiKey || undefined,
-              });''',
-              '''      await createNode({
-                name,
-                address,
-                port: Number(port) || 8443,
-                keyId,
-                apiKey,
-                caCertificate: caCertificate || undefined,
-                serverName: serverName || undefined,
-              });''',
+          result, create_count = re.subn(
+              r"      await createNode\(\{\n        name,\n        address,\n        port: Number\(port\) \|\| 443,\n        apiKey: apiKey \|\| undefined,\n      \}\);",
+              """      await createNode({
+        name,
+        address,
+        port: Number(port) || 8443,
+        keyId,
+        apiKey,
+        caCertificate: caCertificate || undefined,
+        serverName: serverName || undefined,
+      });""",
+              result,
+              count=1,
           )
-          s = s.replace(
-              '''          <TextInput
-                label={t('nodes.apiKey')}
-                placeholder={t('nodes.optional')}
-                value={nodeForm.values.apiKey}
-                onChange={(e) =>
-                  nodeForm.setFieldValue('apiKey', e.currentTarget.value)
-                }
-                styles={inputStyles}
-              />''',
-              '''          <TextInput
-                label="Agent key ID"
-                placeholder="agent-0123456789abcdef"
-                value={nodeForm.values.keyId}
-                onChange={(e) =>
-                  nodeForm.setFieldValue('keyId', e.currentTarget.value)
-                }
-                onBlur={() => nodeForm.setFieldTouched('keyId', true)}
-                error={nodeForm.getInputProps('keyId').error}
-                styles={inputStyles}
-              />
-              <PasswordInput
-                label="Agent registration secret"
-                description="Shown once by hydraflow-agent init"
-                value={nodeForm.values.apiKey}
-                onChange={(e) =>
-                  nodeForm.setFieldValue('apiKey', e.currentTarget.value)
-                }
-                onBlur={() => nodeForm.setFieldTouched('apiKey', true)}
-                error={nodeForm.getInputProps('apiKey').error}
-                styles={inputStyles}
-              />
-              <Textarea
-                label="Agent CA certificate"
-                description="PEM CA from hydraflow-agent init; optional for publicly trusted certificates"
-                placeholder="-----BEGIN CERTIFICATE-----"
-                autosize
-                minRows={4}
-                maxRows={8}
-                value={nodeForm.values.caCertificate}
-                onChange={(e) =>
-                  nodeForm.setFieldValue('caCertificate', e.currentTarget.value)
-                }
-                styles={inputStyles}
-              />
-              <TextInput
-                label="TLS server name"
-                description="Optional explicit certificate name"
-                placeholder="node-01.example.com"
-                value={nodeForm.values.serverName}
-                onChange={(e) =>
-                  nodeForm.setFieldValue('serverName', e.currentTarget.value)
-                }
-                styles={inputStyles}
-              />''',
+          result, modal_count = re.subn(
+              r"          <TextInput\n            label=\{t\('nodes\.apiKey'\)\}\n            placeholder=\{t\('nodes\.optional'\)\}\n            value=\{nodeForm\.values\.apiKey\}\n            onChange=\{\(e\) =>\n              nodeForm\.setFieldValue\('apiKey', e\.currentTarget\.value\)\n            \}\n            styles=\{inputStyles\}\n          />",
+              """          <TextInput
+            label=\"Agent key ID\"
+            placeholder=\"agent-0123456789abcdef\"
+            value={nodeForm.values.keyId}
+            onChange={(e) =>
+              nodeForm.setFieldValue('keyId', e.currentTarget.value)
+            }
+            onBlur={() => nodeForm.setFieldTouched('keyId', true)}
+            error={nodeForm.getInputProps('keyId').error}
+            styles={inputStyles}
+          />
+          <PasswordInput
+            label=\"Agent registration secret\"
+            description=\"Shown once by hydraflow-agent init\"
+            value={nodeForm.values.apiKey}
+            onChange={(e) =>
+              nodeForm.setFieldValue('apiKey', e.currentTarget.value)
+            }
+            onBlur={() => nodeForm.setFieldTouched('apiKey', true)}
+            error={nodeForm.getInputProps('apiKey').error}
+            styles={inputStyles}
+          />
+          <Textarea
+            label=\"Agent CA certificate\"
+            description=\"PEM CA from hydraflow-agent init; optional for publicly trusted certificates\"
+            placeholder=\"-----BEGIN CERTIFICATE-----\"
+            autosize
+            minRows={4}
+            maxRows={8}
+            value={nodeForm.values.caCertificate}
+            onChange={(e) =>
+              nodeForm.setFieldValue('caCertificate', e.currentTarget.value)
+            }
+            styles={inputStyles}
+          />
+          <TextInput
+            label=\"TLS server name\"
+            description=\"Optional explicit certificate name\"
+            placeholder=\"node-01.example.com\"
+            value={nodeForm.values.serverName}
+            onChange={(e) =>
+              nodeForm.setFieldValue('serverName', e.currentTarget.value)
+            }
+            styles={inputStyles}
+          />""",
+              result,
+              count=1,
           )
-          if s == p.read_text():
-              raise SystemExit('expected Agent form patterns were not found')
-          p.write_text(s)
+
+          counts = {
+              'validators': validators_count,
+              'create payload': create_count,
+              'modal fields': modal_count,
+          }
+          missing = [name for name, count in counts.items() if count != 1]
+          if missing:
+              raise SystemExit(f"Agent form patch missed: {', '.join(missing)}")
+          path.write_text(result)
           PY
       - name: Commit form update
         if: steps.guard.outputs.skip != 'true'
